@@ -1,11 +1,11 @@
 
 #include "source.h"
 
-Source::Source(cyc::Context* ctx) : cyc::Model::Model(ctx) {
+Source::Source(cyc::Context* ctx) : cyc::TimeAgent::TimeAgent(ctx) {
 }
 
 cyc::Model* Source::Clone() {
-  Model* m = new Source(context());
+  Source* m = new Source(context());
   m->InitFrom(this);
   return m;
 }
