@@ -1,0 +1,10 @@
+
+.gitignore
+
+compiler = clang++
+cpp_flags = -g -fpic -I.
+link_flags = -fpic -g -shared -lcycluscore
+
+: foreach *.cc |> $(compiler) $(cpp_flags) -c %f -o %o |> %B.o {objs}
+: {objs} |> $(compiler) $(link_flags) %f -o %o |> source.so
+
