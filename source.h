@@ -1,12 +1,7 @@
 #ifndef CYCLUS_SOURCE_H_
 #define CYCLUS_SOURCE_H_
 
-#include "cyclus/model.h"
-#include "cyclus/time_agent.h"
-#include "cyclus/resource.h"
-#include "cyclus/transaction.h"
-#include "cyclus/message.h"
-#include "cyclus/context.h"
+#include "cyclus/cyclus.h"
 
 namespace cyc = cyclus;
 
