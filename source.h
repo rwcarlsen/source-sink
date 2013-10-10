@@ -13,12 +13,7 @@ class Source : public cyc::TimeAgent {
 
   virtual cyc::Model* Clone();
 
-  virtual void Deploy(cyc::Model* parent);
-
   virtual std::vector<cyc::Resource::Ptr> RemoveResource(cyc::Transaction order);
-
-  virtual void AddResource(cyc::Transaction trans,
-                           std::vector<cyc::Resource::Ptr> manifest);
 
   virtual void HandleTick(int time);
 
@@ -28,6 +23,7 @@ class Source : public cyc::TimeAgent {
 
  private:
 
+  cyc::ResourceBuff inventory_;
 };
 #endif
 
