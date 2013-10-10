@@ -15,5 +15,5 @@ cpp_flags = -g -fpic -I. $(includes)
 link_flags = -fpic -g -shared -lcycluscore
 
 : foreach *.cc |> $CXX $(cpp_flags) -c %f -o %o |> %B.o {objs}
-: {objs} |> $CXX $(link_flags) %f -o %o |> source.so
+: foreach *.o |> $CXX $(link_flags) %f -o %o |> %B.so
 

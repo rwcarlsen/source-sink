@@ -6,7 +6,7 @@
 
 namespace cyc = cyclus;
 
-class Builder : public cyc::TimeAgent {
+class Builder : public cyc::TimeAgent, public cyc::Communicator {
 
  public:
   /// a list of prototypes to build on a given timestep
@@ -18,16 +18,20 @@ class Builder : public cyc::TimeAgent {
 
   virtual cyc::Model* Clone();
 
-  virtual void HandleTick(int time);
+  void ReceiveMessage(cyc::Message::Ptr msg) {
+    msg->SendOn();
+  };
+
+  virtual void HandleTick(int time) { };
 
   virtual void HandleTock(int time);
 
   virtual void HandleDailyTasks(int time, int day) { };
 
+  void Schedule(std::string prototype, int build_time);
+
  private:
-
   std::map<int, Queue> schedule_;
-
 };
 #endif
 

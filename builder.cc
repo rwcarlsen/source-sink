@@ -9,13 +9,14 @@ cyc::Model* Builder::Clone() {
   return m;
 }
 
-void Builder::HandleTick(int time) {
-}
-
 void Builder::HandleTock(int time) {
   Queue protos = schedule_[time];
   for (int i = 0; i < protos.size(); ++i) {
     Model* m = context()->CreateModel<Model>(protos[i]);
     m->Deploy(this);
   }
+}
+
+void Builder::Schedule(std::string prototype, int build_time) {
+  schedule_[build_time].push_back(prototype);
 }
