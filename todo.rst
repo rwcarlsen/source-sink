@@ -1,0 +1,11 @@
+
+* libcyclus.so isn't being linked to: boost_system, Osi, Clp, Cgl 
+
+* Need to move default module install location to a cyclus-specific dir rather than just generic "lib/Models"
+
+* Env::FindModuleLib should probably search the CYCLUS_MODULE_PATH dirs before the cyclus install dir
+
+* Env::FindModuleLib should not search in Env::GetInstallPath (i.e. /usr) for modules - it should search in the specific module lib dir (i.e. lib/cyclusmodules).
+
+* timer tick iteration should be robust against new registrations mid tick/tock.  Probably should push newly registered listeners to a separate list until the current tick/tock are finished.
+

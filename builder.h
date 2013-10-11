@@ -18,11 +18,15 @@ class Builder : public cyc::TimeAgent, public cyc::Communicator {
 
   virtual cyc::Model* Clone();
 
+  virtual void Deploy(cyc::Model* parent);
+
   void ReceiveMessage(cyc::Message::Ptr msg) {
     msg->SendOn();
   };
 
-  virtual void HandleTick(int time) { };
+  virtual void HandleTick(int time) {
+    std::cout << "builder ticking\n";
+};
 
   virtual void HandleTock(int time);
 

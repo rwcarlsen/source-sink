@@ -14,6 +14,18 @@ includes += -I/usr/lib/glib-2.0/include
 cpp_flags = -g -fpic -I. $(includes)
 link_flags = -fpic -g -shared -lcycluscore
 
+# build module libraries
 : foreach *.cc |> $CXX $(cpp_flags) -c %f -o %o |> %B.o {objs}
-: foreach *.o |> $CXX $(link_flags) %f -o %o |> %B.so
+: source.o |> $CXX $(link_flags) %f -o %o |> libSource.so
+: sink.o |> $CXX $(link_flags) %f -o %o |> libSink.so
+: builder.o |> $CXX $(link_flags) %f -o %o |> libBuilder.so
 
+# build mock simulation binary
+link_flags = -g -L. -rdynamic -Wl,-rpath=/home/r/git/source-sink
+link_flags += -lcycluscore
+link_flags += -lboost_system 
+link_flags += -lOsi 
+link_flags += -lClp 
+link_flags += -lCgl 
+link_flags += -lSource -lSink -lBuilder 
+: cmd/main.cc | *.so |> $CXX $(cpp_flags) $(link_flags) %f -o %o |> %B

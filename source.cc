@@ -1,12 +1,17 @@
 
 #include "source.h"
 
-Source::Source(cyc::Context* ctx) : cyc::TimeAgent::TimeAgent(ctx) {}
+Source::Source(cyc::Context* ctx) : cyc::TimeAgent::TimeAgent(ctx) { }
 
 cyc::Model* Source::Clone() {
   Source* m = new Source(context());
   m->InitFrom(this);
   return m;
+}
+
+void Source::Deploy(cyc::Model* parent) {
+  Model::Deploy(parent);
+  context()->RegisterTicker(this);
 }
 
 std::vector<cyc::Resource::Ptr> Source::RemoveResource(cyc::Transaction
@@ -37,11 +42,13 @@ void Source::HandleTick(int time) {
   msg->SendOn();
 }
 
-void Source::HandleTock(int time) { }
-
 void Source::ReceiveMessage(cyc::Message::Ptr msg) {
   if (msg->trans().supplier() != this) {
     throw cyc::Error("SourceFacility is not the supplier of this msg.");
   }
   msg->trans().ApproveTransfer();
+}
+
+extern "C" cyc::Model* ConstructSource(cyc::Context* ctx) {
+  return new Source(ctx);
 }

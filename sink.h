@@ -1,23 +1,24 @@
-#ifndef CYCLUS_SOURCE_H_
-#define CYCLUS_SOURCE_H_
+#ifndef CYCLUS_SINK_H_
+#define CYCLUS_SINK_H_
 
 #include "cyclus/cyclus.h"
 
 namespace cyc = cyclus;
 
-class Source : public cyc::TimeAgent, public cyc::Communicator {
+class Sink : public cyc::TimeAgent, public cyc::Communicator {
  public:
-  Source(cyc::Context* ctx);
+  Sink(cyc::Context* ctx);
 
-  virtual ~Source() { };
+  virtual ~Sink() { };
 
   virtual cyc::Model* Clone();
 
   virtual void Deploy(cyc::Model* parent);
 
-  virtual std::vector<cyc::Resource::Ptr> RemoveResource(cyc::Transaction order);
+  void AddResource(cyc::Transaction trans,
+                   std::vector<cyc::Resource::Ptr> manifest);
 
-  void ReceiveMessage(cyc::Message::Ptr msg);
+  void ReceiveMessage(cyc::Message::Ptr msg) { };
 
   virtual void HandleTick(int time);
 
@@ -26,7 +27,11 @@ class Source : public cyc::TimeAgent, public cyc::Communicator {
   virtual void HandleDailyTasks(int time, int day) { };
 
   void set_rate(double rate) {
-    inventory_.SetCapacity(rate);
+    rate_ = rate;
+  };
+
+  void set_cap(double cap) {
+    inventory_.SetCapacity(cap);
   };
 
   void set_qual(std::string qual) {
@@ -40,6 +45,7 @@ class Source : public cyc::TimeAgent, public cyc::Communicator {
  private:
   std::string qual_;
   std::string units_;
+  double rate_;
   cyc::ResourceBuff inventory_;
 };
 #endif
