@@ -4,7 +4,7 @@
 Sink::Sink(cyc::Context* ctx) : cyc::TimeAgent::TimeAgent(ctx) { }
 
 cyc::Model* Sink::Clone() {
-  Sink* m = new Sink(context());
+  Sink* m = new Sink(*this);
   m->InitFrom(this);
   return m;
 }
@@ -31,6 +31,7 @@ void Sink::HandleTick(int time) {
                                   qual_,
                                   units_
                                 );
+  std::cout << "requesting " << std::min(inventory_.space(), rate_) << "\n";
   cyc::Transaction trans(this, cyc::REQUEST);
   trans.SetCommod(qual_);
   trans.SetResource(r);

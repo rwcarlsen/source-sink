@@ -9,7 +9,7 @@
 namespace cyc = cyclus;
 
 int main(int argc, char** argv) {
-  cyc::Logger::ReportLevel() = cyc::LEV_DEBUG2;
+  cyc::Logger::ReportLevel() = cyc::LEV_INFO5;
 
   cyc::DynamicModule dyn_src("Source");
   cyc::DynamicModule dyn_snk("Sink");
@@ -43,6 +43,7 @@ int main(int argc, char** argv) {
   m->SetName("dairy sink");
   Sink* snk = dynamic_cast<Sink*>(m);
   snk->set_rate(50);
+  snk->set_cap(1000);
   snk->set_qual("milk");
   snk->set_units("kg");
   ctx.AddPrototype("milk incinerator", snk);
@@ -66,6 +67,7 @@ int main(int argc, char** argv) {
   m->SetName("milk market");
   cyc::MarketModel* mkt = dynamic_cast<cyc::MarketModel*>(m);
   mkt->SetCommodity("milk");
+  mkt->Deploy(mkt);
   cyc::MarketModel::RegisterMarket(mkt);
 
   ti.RunSim();

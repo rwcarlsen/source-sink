@@ -4,7 +4,7 @@
 Source::Source(cyc::Context* ctx) : cyc::TimeAgent::TimeAgent(ctx) { }
 
 cyc::Model* Source::Clone() {
-  Source* m = new Source(context());
+  Source* m = new Source(*this);
   m->InitFrom(this);
   return m;
 }
@@ -33,6 +33,7 @@ void Source::HandleTick(int time) {
                                   qual_,
                                   units_
                                 );
+  std::cout << "offering " << inventory_.quantity() << "\n";
   cyc::Transaction trans(this, cyc::OFFER);
   trans.SetCommod(qual_);
   trans.SetResource(r);
