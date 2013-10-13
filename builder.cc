@@ -12,11 +12,9 @@ cyc::Model* Builder::Clone() {
 void Builder::Deploy(cyc::Model* parent) {
   Model::Deploy(parent);
   context()->RegisterTicker(this);
-  std::cout << "builder deployed\n";
 }
 
 void Builder::HandleTock(int time) {
-  std::cout << "builder tocking\n";
   Queue protos = schedule_[time];
   for (int i = 0; i < protos.size(); ++i) {
     Model* m = context()->CreateModel<Model>(protos[i]);

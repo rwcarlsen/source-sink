@@ -24,9 +24,7 @@ class Builder : public cyc::TimeAgent, public cyc::Communicator {
     msg->SendOn();
   };
 
-  virtual void HandleTick(int time) {
-    std::cout << "builder ticking\n";
-};
+  virtual void HandleTick(int time) { };
 
   virtual void HandleTock(int time);
 

@@ -33,7 +33,6 @@ void Source::HandleTick(int time) {
                                   qual_,
                                   units_
                                 );
-  std::cout << "offering " << inventory_.quantity() << "\n";
   cyc::Transaction trans(this, cyc::OFFER);
   trans.SetCommod(qual_);
   trans.SetResource(r);

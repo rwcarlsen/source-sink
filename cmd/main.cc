@@ -9,7 +9,7 @@
 namespace cyc = cyclus;
 
 int main(int argc, char** argv) {
-  cyc::Logger::ReportLevel() = cyc::LEV_INFO5;
+  cyc::Logger::ReportLevel() = cyc::LEV_DEBUG2;
 
   cyc::DynamicModule dyn_src("Source");
   cyc::DynamicModule dyn_snk("Sink");
@@ -53,7 +53,7 @@ int main(int argc, char** argv) {
   m->SetModelType("Facility");
   m->SetName("deployer");
   Builder* bld = dynamic_cast<Builder*>(m);
-  bld->Schedule("dairy farm", 1);
+  bld->Schedule("dairy farm", 0);
   bld->Schedule("milk incinerator", 0);
   bld->Schedule("milk incinerator", 5);
   bld->Schedule("milk incinerator", 10);
@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
   m->SetName("milk market");
   cyc::MarketModel* mkt = dynamic_cast<cyc::MarketModel*>(m);
   mkt->SetCommodity("milk");
-  mkt->Deploy(mkt);
+  mkt->Deploy(mkt); // has no parent
   cyc::MarketModel::RegisterMarket(mkt);
 
   ti.RunSim();

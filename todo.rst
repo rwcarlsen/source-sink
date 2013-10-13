@@ -9,3 +9,6 @@
 
 * timer tick iteration should be robust against new registrations mid tick/tock.  Probably should push newly registered listeners to a separate list until the current tick/tock are finished.
 
+* when the Context::InitTime is called, the timer resets, and any
+  previously registered listeners are wiped - this behavior probably needs
+  to be changed.

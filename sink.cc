@@ -31,7 +31,6 @@ void Sink::HandleTick(int time) {
                                   qual_,
                                   units_
                                 );
-  std::cout << "requesting " << std::min(inventory_.space(), rate_) << "\n";
   cyc::Transaction trans(this, cyc::REQUEST);
   trans.SetCommod(qual_);
   trans.SetResource(r);
