@@ -1,9 +1,15 @@
 
 #include "market.h"
 
-Market::Market(cyclus::Context* ctx) : cyclus::MarketModel(ctx) {}
+Market::Market(cyc::Context* ctx) : cyc::MarketModel(ctx) { }
 
-void Market::ReceiveMessage(cyclus::Message::Ptr msg) {
+cyc::Model* Market::Clone() {
+  Market* m = new Market(*this);
+  m->InitFrom(this);
+  return m;
+}
+
+void Market::ReceiveMessage(cyc::Message::Ptr msg) {
   if (msg->trans().IsOffer()) {
     offs_.push_back(msg);
   } else {
@@ -12,17 +18,21 @@ void Market::ReceiveMessage(cyclus::Message::Ptr msg) {
 }
 
 void Market::Resolve() {
+  if (reqs_.size() == 0 || offs_.size() == 0) {
+    return;
+  }
+
   cyc::Message::Ptr curr_req = reqs_.front();
   cyc::Message::Ptr curr_off = offs_.front();
   reqs_.pop_front();
   offs_.pop_front();
-  double matched = 0
+  double matched = 0;
   while (reqs_.size() > 0 && offs_.size() > 0) {
-    double req_qty = curr_req->trans().resource().quantity();
-    double off_qty = curr_off->trans().resource().quantity();
+    double req_qty = curr_req->trans().resource()->quantity();
+    double off_qty = curr_off->trans().resource()->quantity();
     if ((req_qty - matched) > off_qty) {
       curr_off->trans().MatchWith(curr_req->trans());
-      curr_off->SetDir(cyclus::DOWN_MSG);
+      curr_off->SetDir(cyc::DOWN_MSG);
       curr_off->SendOn();
 
       matched += off_qty;
@@ -31,9 +41,9 @@ void Market::Resolve() {
     } else if ((req_qty - matched) < off_qty) {
       cyc::Message::Ptr leftover = curr_off->Clone();
       cyc::Resource::Ptr match = leftover->trans().resource()->ExtractRes(req_qty - matched);
-      curr_off->SetResource(match);
+      curr_off->trans().SetResource(match);
       curr_off->trans().MatchWith(curr_req->trans());
-      curr_off->SetDir(cyclus::DOWN_MSG);
+      curr_off->SetDir(cyc::DOWN_MSG);
       curr_off->SendOn();
 
       matched = 0;
@@ -42,10 +52,10 @@ void Market::Resolve() {
       reqs_.pop_front();
     } else {
       curr_off->trans().MatchWith(curr_req->trans());
-      curr_off->SetDir(cyclus::DOWN_MSG);
+      curr_off->SetDir(cyc::DOWN_MSG);
       curr_off->SendOn();
 
-      matched = 0
+      matched = 0;
       curr_req = reqs_.front();
       reqs_.pop_front();
       curr_off = offs_.front();
@@ -54,6 +64,6 @@ void Market::Resolve() {
   }
 }
 
-extern "C" cyclus::Model* ConstructMarket(cyclus::Context* ctx) {
+extern "C" cyc::Model* ConstructMarket(cyc::Context* ctx) {
   return new Market(ctx);
 }

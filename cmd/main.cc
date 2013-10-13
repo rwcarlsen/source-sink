@@ -2,9 +2,9 @@
 #include "cyclus/cyclus.h"
 #include "cyclus/dynamic_module.h"
 
-#include "source.h"
-#include "sink.h"
 #include "builder.h"
+#include "sink.h"
+#include "source.h"
 
 namespace cyc = cyclus;
 
@@ -14,7 +14,7 @@ int main(int argc, char** argv) {
   cyc::DynamicModule dyn_src("Source");
   cyc::DynamicModule dyn_snk("Sink");
   cyc::DynamicModule dyn_build("Builder");
-  cyc::DynamicModule dyn_mkt("NullMarket");
+  cyc::DynamicModule dyn_mkt("Market");
 
   cyc::Timer ti;
   cyc::EventManager em;
@@ -62,7 +62,7 @@ int main(int argc, char** argv) {
   bld->Deploy(bld); // has no parent
 
   m = dyn_mkt.ConstructInstance(&ctx);
-  m->SetModelImpl("NullMarket");
+  m->SetModelImpl("Market");
   m->SetModelType("Market");
   m->SetName("milk market");
   cyc::MarketModel* mkt = dynamic_cast<cyc::MarketModel*>(m);
