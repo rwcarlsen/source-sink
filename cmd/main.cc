@@ -1,6 +1,7 @@
 
 #include "cyclus/cyclus.h"
 #include "cyclus/dynamic_module.h"
+#include "cyclus/sqlite_back.h"
 
 #include "builder.h"
 #include "sink.h"
@@ -11,13 +12,11 @@ namespace cyc = cyclus;
 int main(int argc, char** argv) {
   cyc::Logger::ReportLevel() = cyc::LEV_DEBUG2;
 
-  cyc::DynamicModule dyn_src("Source");
-  cyc::DynamicModule dyn_snk("Sink");
-  cyc::DynamicModule dyn_build("Builder");
-  cyc::DynamicModule dyn_mkt("Market");
-
-  cyc::Timer ti;
+  // create and initialize context and friends
   cyc::EventManager em;
+  cyc::SqliteBack sqlback("out.sqlite");
+  em.RegisterBackend(&sqlback);
+  cyc::Timer ti;
   cyc::Context ctx(&ti, &em);
 
   int start = 0;
@@ -25,6 +24,13 @@ int main(int argc, char** argv) {
   int decay = 0;
   ctx.InitTime(start, dur, decay);
 
+  // dynamically load models
+  cyc::DynamicModule dyn_src("Source");
+  cyc::DynamicModule dyn_snk("Sink");
+  cyc::DynamicModule dyn_build("Builder");
+  cyc::DynamicModule dyn_mkt("Market");
+
+  // create and configure models
   cyc::Model* m;
 
   m = dyn_src.ConstructInstance(&ctx);
@@ -70,6 +76,7 @@ int main(int argc, char** argv) {
   mkt->Deploy(mkt); // has no parent
   cyc::MarketModel::RegisterMarket(mkt);
 
+  // run simulation and clean up
   ti.RunSim();
 
   em.close();
