@@ -1,0 +1,60 @@
+<simulation>
+  <control>
+    <duration>1105</duration>
+    <startmonth>11</startmonth>
+    <startyear>2007</startyear>
+    <simstart>0</simstart>
+    <decay>2</decay>
+  </control>
+
+  <!-- one or more prototypes -->
+  <prototype>
+    <name>Source1</name>
+    <!-- model-custom content here -->
+    <SourceFacility> <!-- tag name is module class name -->
+    </SourceFacility>
+    <!-- end model-custom content -->
+    <incommods>
+      <!-- zero or more in commodities -->
+      <name>foo1_commod</name>
+      <name>foo2_commod</name>
+    </incommods>
+    <outcommods>
+      <!-- zero or more out commodities -->
+      <name>foo3_commod</name>
+      <name>foo4_commod</name>
+    </outcommods>
+  </prototype>
+
+  <prototype>
+    <name>deployer1</name>
+    ...
+  </prototype>
+
+  <!-- one or more initial agent instances -->
+  <initial_agent>
+    <prototype>Source1</prototype>
+    <label>first_source</label>
+    <parent>first_builder</parent> <!-- optional -->
+  </initial_agent>
+  <initial_agent>
+    <prototype>deployer1</prototype>
+    <label>first_builder</label>
+    <!-- has no parent -->
+  </initial_agent>
+
+  <!-- zero or more recipes -->
+  <recipe>
+    <name>natl_u</name>
+    <basis>mass</basis>
+    <isotope>
+      <id>92235</id>
+      <comp>0.711</comp>
+    </isotope>
+    <isotope>
+      <id>92238</id>
+      <comp>99.289</comp>
+    </isotope>
+  </recipe>
+
+</simulation>
