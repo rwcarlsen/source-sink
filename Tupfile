@@ -22,11 +22,8 @@ link_flags = -fpic -g -shared -lcycluscore
 : market.o |> $CXX $(link_flags) %f -o %o |> libMarket.so
 
 # build mock simulation binary
-link_flags = -g -L. -rdynamic -Wl,-rpath=/home/robert/git/source-sink
+link_flags = -g -L. -rdynamic -Wl,-rpath=/home/r/git/source-sink
 link_flags += -lcycluscore
 link_flags += -lboost_system 
-link_flags += -lOsi 
-link_flags += -lClp 
-link_flags += -lCgl 
 link_flags += -lSource -lSink -lBuilder -lMarket
 : cmd/main.cc | *.so |> $CXX $(cpp_flags) $(link_flags) %f -o %o |> %B

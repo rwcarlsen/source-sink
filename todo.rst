@@ -1,5 +1,5 @@
 
-* libcyclus.so isn't being linked to: boost_system, Osi, Clp, Cgl 
+* libcyclus.so isn't being linked to: boost_system properly
 
 * Need to move default module install location to a cyclus-specific dir rather than just generic "lib/Models"
 
