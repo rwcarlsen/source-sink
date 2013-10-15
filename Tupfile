@@ -1,6 +1,5 @@
 
 .gitignore
-export CXX
 
 includes += -I/usr/include/coin
 includes += -I/usr/include/libxml2
@@ -11,19 +10,19 @@ includes += -I/usr/lib/glibmm-2.4/include
 includes += -I/usr/include/glib-2.0
 includes += -I/usr/lib/glib-2.0/include
 
-cpp_flags = -g -fpic -I. $(includes)
-link_flags = -fpic -g -shared -lcycluscore
+cxx_flags = @(CXXFLAGS) -fpic -I@(CYCLUS_INSTALL)/include -I. $(includes)
+ld_flags = @(LDFLAGS) -fpic -L@(CYCLUS_INSTALL)/lib -L. -rdynamic -Wl,-rpath=@(PROJECT_DIR)/build,-rpath=@(CYCLUS_INSTALL)/lib -lcycluscore
 
 # build module libraries
-: foreach *.cc |> $CXX $(cpp_flags) -c %f -o %o |> %B.o {objs}
-: source.o |> $CXX $(link_flags) %f -o %o |> libSource.so
-: sink.o |> $CXX $(link_flags) %f -o %o |> libSink.so
-: builder.o |> $CXX $(link_flags) %f -o %o |> libBuilder.so
-: market.o |> $CXX $(link_flags) %f -o %o |> libMarket.so
+: foreach *.cc |> @(CXX) $(cxx_flags) -c %f -o %o |> %B.o {objs}
+
+!cxxlink = |> @(CXX) $(ld_flags) -shared %f -o %o |> 
+: source.o |> !cxxlink |> libSource.so
+: sink.o |> !cxxlink |> libSink.so
+: builder.o |> !cxxlink |> libBuilder.so
+: market.o |> !cxxlink |> libMarket.so
 
 # build mock simulation binary
-link_flags = -g -L. -rdynamic -Wl,-rpath=/home/r/git/source-sink
-link_flags += -lcycluscore
-link_flags += -lboost_system 
-link_flags += -lSource -lSink -lBuilder -lMarket
-: cmd/main.cc | *.so |> $CXX $(cpp_flags) $(link_flags) %f -o %o |> %B
+ld_flags += -lboost_system
+ld_flags += -lSource -lSink -lBuilder -lMarket
+: cmd/main.cc | *.so |> @(CXX) $(cxx_flags) $(ld_flags) %f -o %o |> %B
