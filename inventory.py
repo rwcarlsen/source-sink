@@ -4,7 +4,11 @@ import sqlite3
 def main():
   agent_id = '97'
   fname = 'cyclus.sqlite'
+  start_time = 0
+  end_time = 0
+
   conn = sqlite3.connect(fname)
+  conn.row_factory = sqlite3.Row
 
   # get all resources transacted to/from an agent and when the tx occured
   sql =  'SELECT trr.ResourceID,tr.Time,tr.SenderID,tr.ReceiverID FROM Transactions AS tr'
@@ -28,8 +32,6 @@ def main():
 
   # find cumulative leaf resource id's for each timestep
   inventory = {}
-  start_time = 0
-  end_time = 0
   for i in range(start_time, end_time):
     inventory[i] = set()
     for node in in_nodes:
@@ -56,7 +58,7 @@ def add_children(conn, node, out_ids):
     if right.res_id not in out_ids:
       add_children(conn, right, out_ids)
 
-class Node(Object):
+class Node:
   def __init__(self, res_id, time):
     self.res_id = str(res_id)
     self.time = time
@@ -73,10 +75,10 @@ class Node(Object):
     node.parent = self
 
   def chopped_leaves(self, choptime):
-  """
-  Returns the resource nodes that are leaves if and only if the time has not
-  progressed beyond choptime.
-  """
+    """
+    Returns the resource nodes that are leaves if and only if the time has not
+    progressed beyond choptime.
+    """
     leaves = []
     if self.is_leaf():
       leaves.append(self)
@@ -89,15 +91,15 @@ class Node(Object):
     return leaves
 
   def is_leaf(self, choptime = 99999999):
-  """
-  Returns true if this node has no children through choptime
-  """
+    """
+    Returns true if this node has no children through choptime
+    """
     leaf = True
     if (self.left is not None) and self.left.time < choptime:
       leaf = False
     if (self.right is not None) and self.right.time < choptime:
       leaf = False
-    if self.time < choptime
+    if self.time < choptime:
       leaf = False
     return leaf
 
