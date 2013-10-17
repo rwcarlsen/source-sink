@@ -2,27 +2,31 @@
 import sqlite3
 
 def main():
-  agent_id = '97'
-  fname = 'cyclus.sqlite'
+  agent_id = '5'
+  fname = 'out.sqlite'
   start_time = 0
-  end_time = 0
+  end_time = 1104
 
+  # set up connection and create indexes
   conn = sqlite3.connect(fname)
   conn.row_factory = sqlite3.Row
+  conn.execute('CREATE INDEX IF NOT EXISTS res_par1 ON Resources(Parent1 ASC)')
+  conn.execute('CREATE INDEX IF NOT EXISTS res_par2 ON Resources(Parent2 ASC)')
 
   # get all resources transacted to/from an agent and when the tx occured
-  sql =  'SELECT trr.ResourceID,tr.Time,tr.SenderID,tr.ReceiverID FROM Transactions AS tr'
+  sql =  'SELECT trr.ResourceID,tr.Time,tr.SenderID,tr.ReceiverID,res.Quantity FROM Transactions AS tr'
   sql += ' INNER JOIN TransactedResources AS trr'
   sql +=   ' ON tr.ID = trr.TransactionID'
+  sql += ' INNER JOIN Resources AS res'
+  sql +=   ' ON trr.ResourceID = res.ID'
   sql += ' WHERE tr.SenderID = ' + agent_id + ' OR tr.ReceiverID = ' + agent_id
 
-  
   # create root and end nodes
   in_nodes = []
   out_ids = []
   for row in conn.execute(sql):
-    if row['SenderID'] == agent_id:
-      in_nodes.append(Node(row['ResourceID'], row['Time']))
+    if str(row['ReceiverID']) == agent_id:
+      in_nodes.append(Node(row['ResourceID'], row['Time'], row['Quantity']))
     else:
       out_ids.append(str(row['ResourceID']))
 
@@ -30,6 +34,12 @@ def main():
   for node in in_nodes:
     add_children(conn, node, out_ids)
 
+  edges = set()
+  for node in in_nodes:
+    edges |= node.dot_edges()
+  print(dot_graph(edges))
+  return
+  
   # find cumulative leaf resource id's for each timestep
   inventory = {}
   for i in range(start_time, end_time):
@@ -42,29 +52,50 @@ def add_children(conn, node, out_ids):
   if node.res_id in out_ids:
     return
 
-  sql = 'SELECT ID,TimeCreated FROM Resources'
+  sql = 'SELECT ID,TimeCreated,Quantity FROM Resources'
   sql += ' WHERE Parent1 = ' + node.res_id
   for row in conn.execute(sql):
-    left = Node(row['ID'], row['TimeCreated'])
+    left = Node(row['ID'], row['TimeCreated'], row['Quantity'])
     node.set_left(left)
     if left.res_id not in out_ids:
       add_children(conn, left, out_ids)
 
-  sql = 'SELECT ID,TimeCreated FROM Resources'
+  sql = 'SELECT ID,TimeCreated,Quantity FROM Resources'
   sql += ' WHERE Parent2 = ' + node.res_id
   for row in conn.execute(sql):
-    right = Node(row['ID'], row['TimeCreated'])
+    right = Node(row['ID'], row['TimeCreated'], row['Quantity'])
     node.set_right(right)
     if right.res_id not in out_ids:
       add_children(conn, right, out_ids)
 
+def dot_graph(edges):
+  s = 'digraph G {\n'
+  for edge in edges:
+    s += '    ' + edge + ';\n'
+  s += '\n}'
+  return s
+
 class Node:
-  def __init__(self, res_id, time):
+  def __init__(self, res_id, time, qty):
     self.res_id = str(res_id)
     self.time = time
+    self.qty = qty
     self.left = None
     self.right = None
     self.parent = None
+
+  def __str__(self):
+    return 'Res ' + self.res_id + ' @ t=' + str(self.time) + ' (qty ' + str(self.qty) + ')'
+
+  def dot_edges(self):
+    edges = set()
+    if self.left is not None:
+      edges.add('"' + str(self) + '" -> "' + str(self.left) + '"')
+      edges |= self.left.dot_edges()
+    if self.right is not None:
+      edges.add('"' + str(self) + '" -> "' + str(self.right) + '"')
+      edges |= self.right.dot_edges()
+    return edges
 
   def set_left(self, node):
     self.left = node
@@ -94,14 +125,14 @@ class Node:
     """
     Returns true if this node has no children through choptime
     """
-    leaf = True
     if (self.left is not None) and self.left.time < choptime:
-      leaf = False
+      return False
     if (self.right is not None) and self.right.time < choptime:
-      leaf = False
-    if self.time < choptime:
-      leaf = False
-    return leaf
+      return False
+    if self.time >= choptime:
+      return False
+    return True
 
 if __name__ == '__main__':
   main()
+  #main2()

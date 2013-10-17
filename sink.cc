@@ -1,5 +1,6 @@
 
 #include "sink.h"
+#include "boost/pointer_cast.hpp"
 
 Sink::Sink(cyc::Context* ctx) : cyc::TimeAgent::TimeAgent(ctx) { }
 
@@ -16,7 +17,14 @@ void Sink::Deploy(cyc::Model* parent) {
 
 void Sink::AddResource(cyc::Transaction trans,
                                std::vector<cyc::Resource::Ptr> manifest) {
-  inventory_.PushAll(manifest);
+  cyc::GenericResource::Ptr r = boost::dynamic_pointer_cast<cyc::GenericResource>(manifest[0]);
+  for (int i = 1; i < manifest.size(); ++i) {
+    r->Absorb(boost::dynamic_pointer_cast<cyc::GenericResource>(manifest[i]));
+  }
+  if (inventory_.count() > 0) {
+    r->Absorb(boost::dynamic_pointer_cast<cyc::GenericResource>(inventory_.PopOne()));
+  }
+  inventory_.PushOne(boost::dynamic_pointer_cast<cyc::Resource>(r));
 }
 
 void Sink::HandleTick(int time) {

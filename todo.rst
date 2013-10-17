@@ -1,4 +1,9 @@
 
+* transactions must be recorded AFTER resources are taken from supplier and
+  BEFORE resources are sent to the receiver.  This allows correct determination
+  of which resource spliiting, combining, etc. operations happen before vs
+  after the transfer
+
 * libcyclus.so isn't being linked to: boost_system properly
 
 * Need to move default module install location to a cyclus-specific dir rather than just generic "lib/Models"
