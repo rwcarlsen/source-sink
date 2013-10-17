@@ -4,12 +4,54 @@ import sqlite3
 def main():
   agent_id = '5'
   fname = 'out.sqlite'
-  start_time = 0
-  end_time = 1104
 
-  # set up connection and create indexes
   conn = sqlite3.connect(fname)
   conn.row_factory = sqlite3.Row
+
+  nodes = build_trees(conn, agent_id)
+
+  # print dot graph
+  edges = set()
+  for node in nodes:
+    edges |= node.dot_edges()
+  print(dot_graph(edges))
+  
+  # print time inventories
+  inventory = time_inventory(conn, nodes)
+  for key, val in inventory.items():
+    print('timestep', key)
+    for node in val:
+      print('    ', node)
+
+def time_inventory(conn, root_nodes):
+  # find simulation duration
+  q = conn.execute('SELECT SimulationStart,Duration FROM SimulationTimeInfo')
+  row = q.fetchone()
+  end_time = row['SimulationStart'] + row['Duration']
+
+  # find cumulative leaf resource id's for each timestep
+  inventory = {}
+  for i in range(0, end_time):
+    inventory[i] = set()
+    for node in root_nodes:
+      leaves = node.chopped_leaves(i)
+      inventory[i] |= set(leaves)
+  return inventory
+
+def dot_graph(edges):
+  s = 'digraph G {\n'
+  for edge in edges:
+    s += '    ' + edge + ';\n'
+  s += '\n}'
+  return s
+
+def build_trees(conn, agent_id):
+  """
+  Builds a set of resource heritage trees for resources inside agent_id
+  between the specified start and end times.  These trees are not
+  necessarily disjoint. The returned value is the list of root nodes.
+  """
+  # set up connection and create indexes
   conn.execute('CREATE INDEX IF NOT EXISTS res_par1 ON Resources(Parent1 ASC)')
   conn.execute('CREATE INDEX IF NOT EXISTS res_par2 ON Resources(Parent2 ASC)')
 
@@ -34,19 +76,7 @@ def main():
   for node in in_nodes:
     add_children(conn, node, out_ids)
 
-  edges = set()
-  for node in in_nodes:
-    edges |= node.dot_edges()
-  print(dot_graph(edges))
-  return
-  
-  # find cumulative leaf resource id's for each timestep
-  inventory = {}
-  for i in range(start_time, end_time):
-    inventory[i] = set()
-    for node in in_nodes:
-      leaves = node.chopped_leaves(i)
-      inventory[i] = inventory[i] | set(leaves)
+  return in_nodes
 
 def add_children(conn, node, out_ids):
   if node.res_id in out_ids:
@@ -68,13 +98,6 @@ def add_children(conn, node, out_ids):
     if right.res_id not in out_ids:
       add_children(conn, right, out_ids)
 
-def dot_graph(edges):
-  s = 'digraph G {\n'
-  for edge in edges:
-    s += '    ' + edge + ';\n'
-  s += '\n}'
-  return s
-
 class Node:
   def __init__(self, res_id, time, qty):
     self.res_id = str(res_id)
@@ -86,6 +109,15 @@ class Node:
 
   def __str__(self):
     return 'Res ' + self.res_id + ' @ t=' + str(self.time) + ' (qty ' + str(self.qty) + ')'
+
+  def __eq__(self, other):
+    return self.res_id == other.res_id
+
+  def __ne__(self, other):
+    return self.res_id != other.res_id
+
+  def __hash__(self):
+    return int(self.res_id)
 
   def dot_edges(self):
     edges = set()
@@ -111,8 +143,10 @@ class Node:
     progressed beyond choptime.
     """
     leaves = []
-    if self.is_leaf():
+    if self.is_leaf(choptime):
       leaves.append(self)
+      return leaves
+    if self.time >= choptime:
       return leaves
 
     if self.left is not None:
@@ -125,6 +159,7 @@ class Node:
     """
     Returns true if this node has no children through choptime
     """
+
     if (self.left is not None) and self.left.time < choptime:
       return False
     if (self.right is not None) and self.right.time < choptime:
@@ -135,4 +170,3 @@ class Node:
 
 if __name__ == '__main__':
   main()
-  #main2()
