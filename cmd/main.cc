@@ -10,7 +10,7 @@
 namespace cyc = cyclus;
 
 int main(int argc, char** argv) {
-  cyc::Logger::ReportLevel() = cyc::LEV_DEBUG2;
+  cyc::Logger::ReportLevel() = cyc::LEV_INFO5;
 
   // create and initialize context and friends
   cyc::EventManager em;

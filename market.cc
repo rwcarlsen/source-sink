@@ -27,7 +27,7 @@ void Market::Resolve() {
   reqs_.pop_front();
   offs_.pop_front();
   double matched = 0;
-  while (reqs_.size() > 0 && offs_.size() > 0) {
+  while (true) {
     double req_qty = curr_req->trans().resource()->quantity();
     double off_qty = curr_off->trans().resource()->quantity();
     if ((req_qty - matched) > off_qty) {
@@ -35,6 +35,9 @@ void Market::Resolve() {
       curr_off->SetDir(cyc::DOWN_MSG);
       curr_off->SendOn();
 
+      if (reqs_.size() == 0 || offs_.size() == 0) {
+        break;
+      }
       matched += off_qty;
       curr_off = offs_.front();
       offs_.pop_front();
@@ -46,6 +49,9 @@ void Market::Resolve() {
       curr_off->SetDir(cyc::DOWN_MSG);
       curr_off->SendOn();
 
+      if (reqs_.size() == 0 || offs_.size() == 0) {
+        break;
+      }
       matched = 0;
       curr_off = leftover;
       curr_req = reqs_.front();
@@ -55,6 +61,9 @@ void Market::Resolve() {
       curr_off->SetDir(cyc::DOWN_MSG);
       curr_off->SendOn();
 
+      if (reqs_.size() == 0 || offs_.size() == 0) {
+        break;
+      }
       matched = 0;
       curr_req = reqs_.front();
       reqs_.pop_front();

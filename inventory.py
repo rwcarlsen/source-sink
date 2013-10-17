@@ -9,6 +9,7 @@ def main():
   conn.row_factory = sqlite3.Row
 
   nodes = build_trees(conn, agent_id)
+  #nodes = build_full(conn)
 
   # print dot graph
   edges = set()
@@ -45,6 +46,29 @@ def dot_graph(edges):
   s += '\n}'
   return s
 
+def build_full(conn):
+  """
+  Builds resource heritage tree for the entire simulation including all
+  agents and returns root nodes.
+  """
+  # set up connection and create indexes
+  conn.execute('CREATE INDEX IF NOT EXISTS res_par1 ON Resources(Parent1 ASC)')
+  conn.execute('CREATE INDEX IF NOT EXISTS res_par2 ON Resources(Parent2 ASC)')
+
+  # create root and end nodes
+  in_nodes = []
+  out_ids = []
+  sql =  'SELECT Parent1,Parent2,ID,TimeCreated,Quantity FROM Resources'
+  for row in conn.execute(sql):
+    if row['Parent1'] == 0 and row['Parent2'] == 0:
+      in_nodes.append(Node(row['ID'], row['TimeCreated'], row['Quantity']))
+
+  # build tree(s) between root and end nodes
+  for node in in_nodes:
+    add_children(conn, node, out_ids)
+
+  return in_nodes
+
 def build_trees(conn, agent_id):
   """
   Builds a set of resource heritage trees for resources inside agent_id
@@ -63,7 +87,6 @@ def build_trees(conn, agent_id):
   sql +=   ' ON trr.ResourceID = res.ID'
   sql += ' WHERE tr.SenderID = ' + agent_id + ' OR tr.ReceiverID = ' + agent_id
 
-  # create root and end nodes
   in_nodes = []
   out_ids = []
   for row in conn.execute(sql):
@@ -83,20 +106,13 @@ def add_children(conn, node, out_ids):
     return
 
   sql = 'SELECT ID,TimeCreated,Quantity FROM Resources'
-  sql += ' WHERE Parent1 = ' + node.res_id
-  for row in conn.execute(sql):
-    left = Node(row['ID'], row['TimeCreated'], row['Quantity'])
-    node.set_left(left)
-    if left.res_id not in out_ids:
-      add_children(conn, left, out_ids)
-
-  sql = 'SELECT ID,TimeCreated,Quantity FROM Resources'
-  sql += ' WHERE Parent2 = ' + node.res_id
-  for row in conn.execute(sql):
-    right = Node(row['ID'], row['TimeCreated'], row['Quantity'])
-    node.set_right(right)
-    if right.res_id not in out_ids:
-      add_children(conn, right, out_ids)
+  sql += ' WHERE Parent1 = ' + node.res_id + ' OR Parent2 = ' + node.res_id
+  add_funcs = [node.set_left, node.set_right]
+  for i, row in enumerate(conn.execute(sql)):
+    child = Node(row['ID'], row['TimeCreated'], row['Quantity'])
+    add_funcs[i](child)
+    if node.res_id not in out_ids:
+      add_children(conn, child, out_ids)
 
 class Node:
   def __init__(self, res_id, time, qty):

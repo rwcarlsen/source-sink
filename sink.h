@@ -47,6 +47,7 @@ class Sink : public cyc::TimeAgent, public cyc::Communicator {
   std::string units_;
   double rate_;
   cyc::ResourceBuff inventory_;
+  cyc::ResourceBuff inventory2_;
 };
 #endif
 

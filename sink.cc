@@ -2,7 +2,9 @@
 #include "sink.h"
 #include "boost/pointer_cast.hpp"
 
-Sink::Sink(cyc::Context* ctx) : cyc::TimeAgent::TimeAgent(ctx) { }
+Sink::Sink(cyc::Context* ctx) : cyc::TimeAgent::TimeAgent(ctx) {
+  inventory2_.SetCapacity(100000000);
+}
 
 cyc::Model* Sink::Clone() {
   Sink* m = new Sink(*this);
@@ -25,6 +27,7 @@ void Sink::AddResource(cyc::Transaction trans,
     r->Absorb(boost::dynamic_pointer_cast<cyc::GenericResource>(inventory_.PopOne()));
   }
   inventory_.PushOne(boost::dynamic_pointer_cast<cyc::Resource>(r));
+
 }
 
 void Sink::HandleTick(int time) {
@@ -46,6 +49,12 @@ void Sink::HandleTick(int time) {
   cyc::Communicator* recipient = dynamic_cast<cyc::Communicator*>(market);
   cyc::Message::Ptr msg(new cyc::Message(this, recipient, trans));
   msg->SendOn();
+
+  if (inventory_.count() > 0) {
+    cyc::Resource::Ptr rr = inventory_.PopOne();
+    inventory2_.PushOne(rr->ExtractRes(rr->quantity() / 2));
+    inventory_.PushOne(rr);
+  }
 }
 
 extern "C" cyc::Model* ConstructSink(cyc::Context* ctx) {
