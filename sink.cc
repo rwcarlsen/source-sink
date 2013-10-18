@@ -2,6 +2,8 @@
 #include "sink.h"
 #include "boost/pointer_cast.hpp"
 
+typedef cyc::GenericResource Gres;
+
 Sink::Sink(cyc::Context* ctx) : cyc::TimeAgent::TimeAgent(ctx) {
   inventory2_.set_capacity(100000000);
 }
@@ -19,12 +21,12 @@ void Sink::Deploy(cyc::Model* parent) {
 
 void Sink::AddResource(cyc::Transaction trans,
                                std::vector<cyc::Resource::Ptr> manifest) {
-  cyc::GenericResource::Ptr r = boost::dynamic_pointer_cast<cyc::GenericResource>(manifest[0]);
+  Gres::Ptr r = cyc::ResCast<Gres>(manifest[0]);
   for (int i = 1; i < manifest.size(); ++i) {
-    r->Absorb(boost::dynamic_pointer_cast<cyc::GenericResource>(manifest[i]));
+    r->Absorb(cyc::ResCast<Gres>(manifest[i]));
   }
   if (inventory_.count() > 0) {
-    r->Absorb(boost::dynamic_pointer_cast<cyc::GenericResource>(inventory_.Pop()));
+    r->Absorb(inventory_.Pop<Gres>());
   }
   inventory_.Push(r);
 }
