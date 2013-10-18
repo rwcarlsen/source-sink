@@ -26,7 +26,7 @@ class Source : public cyc::TimeAgent, public cyc::Communicator {
   virtual void HandleDailyTasks(int time, int day) { };
 
   void set_rate(double rate) {
-    inventory_.SetCapacity(rate);
+    inventory_.set_capacity(rate);
   };
 
   void set_qual(std::string qual) {

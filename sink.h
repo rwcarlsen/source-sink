@@ -31,7 +31,7 @@ class Sink : public cyc::TimeAgent, public cyc::Communicator {
   };
 
   void set_cap(double cap) {
-    inventory_.SetCapacity(cap);
+    inventory_.set_capacity(cap);
   };
 
   void set_qual(std::string qual) {

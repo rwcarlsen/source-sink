@@ -24,7 +24,7 @@ void Source::HandleTick(int time) {
   if (inventory_.space() > 0) {
     cyc::GenericResource::Ptr r = cyc::GenericResource::Create(context(),
                                                                inventory_.space(), qual_, units_);
-    inventory_.PushOne(r);
+    inventory_.Push(r);
   }
 
   // build and send offer

@@ -3,7 +3,7 @@
 #include "boost/pointer_cast.hpp"
 
 Sink::Sink(cyc::Context* ctx) : cyc::TimeAgent::TimeAgent(ctx) {
-  inventory2_.SetCapacity(100000000);
+  inventory2_.set_capacity(100000000);
 }
 
 cyc::Model* Sink::Clone() {
@@ -24,10 +24,9 @@ void Sink::AddResource(cyc::Transaction trans,
     r->Absorb(boost::dynamic_pointer_cast<cyc::GenericResource>(manifest[i]));
   }
   if (inventory_.count() > 0) {
-    r->Absorb(boost::dynamic_pointer_cast<cyc::GenericResource>(inventory_.PopOne()));
+    r->Absorb(boost::dynamic_pointer_cast<cyc::GenericResource>(inventory_.Pop()));
   }
-  inventory_.PushOne(boost::dynamic_pointer_cast<cyc::Resource>(r));
-
+  inventory_.Push(r);
 }
 
 void Sink::HandleTick(int time) {
@@ -51,9 +50,9 @@ void Sink::HandleTick(int time) {
   msg->SendOn();
 
   if (inventory_.count() > 0) {
-    cyc::Resource::Ptr rr = inventory_.PopOne();
-    inventory2_.PushOne(rr->ExtractRes(rr->quantity() / 2));
-    inventory_.PushOne(rr);
+    cyc::Resource::Ptr rr = inventory_.Pop();
+    inventory2_.Push(rr->ExtractRes(rr->quantity() / 2));
+    inventory_.Push(rr);
   }
 }
 
