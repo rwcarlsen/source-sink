@@ -7,15 +7,16 @@ def main():
 
   conn = sqlite3.connect(fname)
   conn.row_factory = sqlite3.Row
-
-  nodes = build_trees(conn, agent_id)
   #nodes = build_full(conn)
+
+  nodes = build_agent_trees(conn, agent_id)
 
   # print dot graph
   edges = set()
   for node in nodes:
     edges |= node.dot_edges()
   print(dot_graph(edges))
+  return
   
   # print time inventories
   inventory = time_inventory(conn, nodes)
@@ -23,6 +24,12 @@ def main():
     print('timestep', key)
     for node in val:
       print('    ', node)
+
+def list_agents(conn):
+  agent_ids = []
+  for row in conn.execute('SELECT ID FROM Agents'):
+    agent_ids.append(row['ID'])
+  return agent_ids
 
 def time_inventory(conn, root_nodes):
   # find simulation duration
@@ -46,7 +53,7 @@ def dot_graph(edges):
   s += '\n}'
   return s
 
-def build_trees(conn, agent_id):
+def build_agent_trees(conn, agent_id):
   """
   Builds a set of resource heritage trees for resources inside agent_id
   between the specified start and end times.  These trees are not

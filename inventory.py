@@ -16,6 +16,7 @@ def main():
   for node in nodes:
     edges |= node.dot_edges()
   print(dot_graph(edges))
+  return
   
   # print time inventories
   inventory = time_inventory(conn, nodes)
