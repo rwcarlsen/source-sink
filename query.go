@@ -1,20 +1,8 @@
 package main
 
 import (
-	"bytes"
-	"fmt"
-
 	"code.google.com/p/go-sqlite/go1/sqlite3"
 )
-
-func BuildDot(edges []string) string {
-	buf := bytes.NewBufferString("digraph G {\n")
-	for _, edge := range edges {
-		buf.WriteString(fmt.Sprintf("    %v;\n", edge))
-	}
-	buf.WriteString("}")
-	return buf.String()
-}
 
 func CreateIndex(conn *sqlite3.Conn) error {
 	sql := "CREATE INDEX IF NOT EXISTS res_par1 ON Resources(Parent1 ASC);"

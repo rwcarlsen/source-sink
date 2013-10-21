@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"log"
@@ -21,11 +22,14 @@ var conn *sqlite3.Conn
 func main() {
 	log.SetFlags(0)
 	flag.Parse()
-	var err error
 
 	fname := flag.Arg(0)
-	agentId, err = strconv.Atoi(flag.Arg(1))
-	fatal(err)
+
+	var err error
+	if flag.NArg() > 1 {
+		agentId, err = strconv.Atoi(flag.Arg(1))
+		fatal(err)
+	}
 
 	conn, err = sqlite3.Open(fname)
 	fatal(err)
@@ -33,11 +37,24 @@ func main() {
 
 	if *fulltree {
 		outputFullTree()
+	} else if *allAgents {
+		outputAllAgents()
 	} else if *inven {
 		outputTimeInventory()
 	} else if *changes {
 		outputChanges()
 	} else {
+		outputAgentGraph()
+	}
+}
+
+func outputAllAgents() {
+	ids, err := ListAgents(conn)
+	fatal(err)
+
+	for i, id := range ids {
+		agentId = id
+		fmt.Printf("building graph %v for agent %v\n", i, id)
 		outputAgentGraph()
 	}
 }
@@ -50,7 +67,8 @@ func outputAgentGraph() {
 	for _, node := range roots {
 		edges.Union(node.DotEdges())
 	}
-	fmt.Println(BuildDot(edges.Slice()))
+	title := fmt.Sprintf("agent_%v", agentId)
+	fmt.Println(BuildDot(title, edges.Slice()))
 }
 
 func outputChanges() {
@@ -98,7 +116,17 @@ func outputFullTree() {
 	for _, node := range roots {
 		edges.Union(node.DotEdges())
 	}
-	fmt.Println(BuildDot(edges.Slice()))
+	fmt.Println(BuildDot("ResourceTree", edges.Slice()))
+}
+
+func BuildDot(title string, edges []string) string {
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "digraph %v {\n", title)
+	for _, edge := range edges {
+		fmt.Fprintf(&buf, "    %v;\n", edge)
+	}
+	buf.WriteString("}")
+	return buf.String()
 }
 
 func fatal(err error) {
