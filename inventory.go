@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"strconv"
 	"log"
+	"strconv"
 
 	"code.google.com/p/go-sqlite/go1/sqlite3"
 )
@@ -13,21 +13,6 @@ import (
 var fulltree = flag.Bool("res-tree", false, "output dot graph of entire resource tree")
 var inven = flag.Bool("inventory", false, "print time series of agent's resource id inventory")
 var qty = flag.Bool("qty", false, "show quantities in dot graph")
-
-type EdgeSet map[string]bool
-
-func (es EdgeSet) Slice() (edges []string) {
-	for edge, _ := range es{
-		edges = append(edges, edge)
-	}
-	return edges
-}
-
-func (es EdgeSet) Union(other EdgeSet) {
-	for edge, _ := range other{
-		es[edge] = true
-	}
-}
 
 func main() {
 	log.SetFlags(0)
@@ -43,6 +28,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer conn.Close()
 
 	roots, err := BuildAgentGraph(conn, agentId)
 	if err != nil {
@@ -68,7 +54,21 @@ func main() {
 			edges.Union(node.DotEdges())
 		}
 		fmt.Println(BuildDot(edges.Slice()))
-		return
+	}
+}
+
+type EdgeSet map[string]bool
+
+func (es EdgeSet) Slice() (edges []string) {
+	for edge, _ := range es {
+		edges = append(edges, edge)
+	}
+	return edges
+}
+
+func (es EdgeSet) Union(other EdgeSet) {
+	for edge, _ := range other {
+		es[edge] = true
 	}
 }
 
