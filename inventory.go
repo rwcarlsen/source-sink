@@ -52,9 +52,11 @@ func outputAllAgents() {
 	ids, err := ListAgents(conn)
 	fatal(err)
 
-	for i, id := range ids {
+	for _, id := range ids {
+		if id == 31 || id == 32 || id == 33 {
+			continue
+		}
 		agentId = id
-		fmt.Printf("building graph %v for agent %v\n", i, id)
 		outputAgentGraph()
 	}
 }

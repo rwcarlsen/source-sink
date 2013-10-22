@@ -1,12 +1,18 @@
 package main
 
 import (
+	"io"
+
 	"code.google.com/p/go-sqlite/go1/sqlite3"
 )
 
 func CreateIndex(conn *sqlite3.Conn) error {
 	sql := "CREATE INDEX IF NOT EXISTS res_par1 ON Resources(Parent1 ASC);"
 	sql += "CREATE INDEX IF NOT EXISTS res_par2 ON Resources(Parent2 ASC);"
+	sql += "CREATE INDEX IF NOT EXISTS trans_id ON Transactions(ID ASC);"
+	sql += "CREATE INDEX IF NOT EXISTS trans_sender ON Transactions(SenderID ASC);"
+	sql += "CREATE INDEX IF NOT EXISTS trans_receiver ON Transactions(ReceiverID ASC);"
+	sql += "CREATE INDEX IF NOT EXISTS transres_transid ON TransactedResources(TransactionID ASC);"
 	return conn.Exec(sql)
 }
 
@@ -48,7 +54,8 @@ func BuildAgentGraph(conn *sqlite3.Conn, agentId int) (roots []*Node, err error)
 
 	inNodes := []*Node{}
 	outIds := map[int]bool{}
-	for stmt, err := conn.Query(sql, agentId, agentId); err == nil; err = stmt.Next() {
+	var stmt *sqlite3.Stmt
+	for stmt, err = conn.Query(sql, agentId, agentId); err == nil; err = stmt.Next() {
 		var receiverId int
 		var resourceId int
 		var t int
@@ -61,6 +68,9 @@ func BuildAgentGraph(conn *sqlite3.Conn, agentId int) (roots []*Node, err error)
 			outIds[resourceId] = true
 		}
 	}
+	if err != io.EOF {
+		return nil, err
+	}
 
 	// build tree(s) between root and end nodes
 	for _, node := range inNodes {
@@ -69,13 +79,14 @@ func BuildAgentGraph(conn *sqlite3.Conn, agentId int) (roots []*Node, err error)
 	return inNodes, nil
 }
 
-func addChildren(conn *sqlite3.Conn, node *Node, outIds map[int]bool) error {
+func addChildren(conn *sqlite3.Conn, node *Node, outIds map[int]bool) (err error) {
 	if outIds[node.Id] {
 		return nil
 	}
 
 	sql := "SELECT ID,TimeCreated FROM Resources WHERE Parent1 = ? OR Parent2 = ?;"
-	for stmt, err := conn.Query(sql, node.Id, node.Id); err == nil; err = stmt.Next() {
+	var stmt *sqlite3.Stmt
+	for stmt, err = conn.Query(sql, node.Id, node.Id); err == nil; err = stmt.Next() {
 		child := &Node{}
 		if err := stmt.Scan(&child.Id, &child.Time); err != nil {
 			return err
@@ -85,6 +96,9 @@ func addChildren(conn *sqlite3.Conn, node *Node, outIds map[int]bool) error {
 			addChildren(conn, child, outIds)
 		}
 		node.AddChild(child)
+	}
+	if err != io.EOF {
+		return err
 	}
 	return nil
 }
