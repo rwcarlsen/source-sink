@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"bytes"
 	"flag"
 	"fmt"
@@ -10,14 +11,14 @@ import (
 	"code.google.com/p/go-sqlite/go1/sqlite3"
 )
 
-var fulltree = flag.Bool("res-tree", false, "output dot graph of entire resource tree")
-var inven = flag.Bool("inventory", false, "print time series of agent's resource id inventory")
-var changes = flag.Bool("changes", false, "print time series of changes to agent's resource id inventory")
-var qty = flag.Bool("qty", false, "show quantities in dot graph")
-var allAgents = flag.Bool("all", false, "do stuff for each agent")
-var agentId int
-
 var conn *sqlite3.Conn
+
+type Node struct {
+	Id int32
+	Time int32
+	Died int32
+	OwnerId int32
+}
 
 func main() {
 	log.SetFlags(0)
@@ -35,100 +36,86 @@ func main() {
 	fatal(err)
 	defer conn.Close()
 
-	if *fulltree {
-		outputFullTree()
-	} else if *allAgents {
-		outputAllAgents()
-	} else if *inven {
-		outputTimeInventory()
-	} else if *changes {
-		outputChanges()
-	} else {
-		outputAgentGraph()
+	err = CreateIndex(conn)
+	fatal(err)
+
+	roots, err := GetRoots(conn)
+	fatal(err)
+	for _, root := range roots {
+		nodes, err := WalkDown(conn, root)
+		fatal(err)
+		err = BuildInventoryTable(nodes)
+		fatal(err)
 	}
 }
 
-func outputAllAgents() {
-	ids, err := ListAgents(conn)
-	fatal(err)
+func GetRoots(conn *sqlite3.Conn) (roots []*Node, err error) {
+	sql := "SELECT ID,TimeCreated FROM Resources WHERE Parent1 = 0 AND Parent2 = 0"
+	var stmt *sqlite3.Stmt
+	var id, t int
+	for stmt, err = conn.Query(sql); err == nil; err = stmt.Next() {
+		err := stmt.Scan(&id, &t)
+		fatal(err)
+		roots = append(roots, &Node{Id: int32(id), Time: int32(t)})
+	}
+	if err != io.EOF {
+		return nil, err
+	}
+	return roots, nil
+}
 
-	for _, id := range ids {
-		if id == 31 || id == 32 || id == 33 {
-			continue
+func WalkDown(conn *sqlite3.Conn, node *Node) (nodes []*Node, err error) {
+	sql := "SELECT ID,TimeCreated FROM Resources WHERE Parent1 = ? OR Parent2 = ?"
+	var stmt *sqlite3.Stmt
+	var id, t int
+	for stmt, err = conn.Query(sql, node.Id, node.Id); err == nil; err = stmt.Next() {
+		if err := stmt.Scan(&id, &t); err != nil {
+			return nil, err
 		}
-		agentId = id
-		outputAgentGraph()
-	}
-}
+		node.Died = int32(t)
+		child := &Node{Id: int32(id), Time: int32(id)}
 
-func outputAgentGraph() {
-	roots, err := BuildAgentGraph(conn, agentId)
-	fatal(err)
-
-	edges := EdgeSet{}
-	for _, node := range roots {
-		edges.Union(node.DotEdges())
-	}
-	title := fmt.Sprintf("agent_%v", agentId)
-	fmt.Println(BuildDot(title, edges.Slice()))
-}
-
-func outputChanges() {
-	roots, err := BuildAgentGraph(conn, agentId)
-	fatal(err)
-
-	added := map[int]map[*Node]bool{}
-	removed := map[int]map[*Node]bool{}
-	for _, node := range roots {
-		node.Changes(added, removed)
-	}
-	for time, set := range added {
-		fmt.Printf("Added at timestep %v\n", time)
-		for node, _ := range set {
-			fmt.Printf("    %s\n", node)
+		owners, err := GetOwners(conn, node.Id)
+		if err != nil {
+			return nil, err
 		}
-	}
-	for time, set := range removed {
-		fmt.Printf("Removed at timestep %v\n", time)
-		for node, _ := range set {
-			fmt.Printf("    %s\n", node)
+		if len(owners) == 0 {
+			nodes = append(nodes, node)
+			child.OwnerId = node.OwnerId
+		} else {
+			var curr int32
+			for _, curr = range owners {
+				nodes = append(nodes, &Node{Id: node.Id, Time: node.Time, Died: node.Died OwnerId: curr})
+			}
+			child.OwnerId = curr
 		}
+
+		nodes = append(nodes, WalkDown(conn, child)...)
 	}
+	return nodes, nil
 }
 
-func outputTimeInventory() {
-	roots, err := BuildAgentGraph(conn, agentId)
-	fatal(err)
+func GetOwners(conn *sqlite3.Conn, id int32) (owners []int32, err error) {
+	// get all resources transacted to/from an agent and when the tx occured
+	sql := `SELECT trr.ResourceID,tr.Time,tr.ReceiverID FROM Transactions AS tr
+           INNER JOIN TransactedResources AS trr
+             ON tr.ID = trr.TransactionID
+           WHERE tr.SenderID = ? OR tr.ReceiverID = ?;`
 
-	inventory, err := TimeInventory(conn, roots)
-	fatal(err)
-	for t, set := range inventory {
-		fmt.Printf("timestep %v\n", t)
-		for node, _ := range set {
-			fmt.Printf("    %s\n", node)
-		}
-	}
+	inNodes := []*Node{}
+	outIds := map[int]bool{}
+	var stmt *sqlite3.Stmt
+	for stmt, err = conn.Query(sql, agentId, agentId); err == nil; err = stmt.Next() {
 }
 
-func outputFullTree() {
-	roots, err := BuildResTree(conn)
-	fatal(err)
-
-	edges := EdgeSet{}
-	for _, node := range roots {
-		edges.Union(node.DotEdges())
-	}
-	fmt.Println(BuildDot("ResourceTree", edges.Slice()))
-}
-
-func BuildDot(title string, edges []string) string {
-	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "digraph %v {\n", title)
-	for _, edge := range edges {
-		fmt.Fprintf(&buf, "    %v;\n", edge)
-	}
-	buf.WriteString("}")
-	return buf.String()
+func CreateIndex(conn *sqlite3.Conn) error {
+	sql := "CREATE INDEX IF NOT EXISTS res_par1 ON Resources(Parent1 ASC);"
+	sql += "CREATE INDEX IF NOT EXISTS res_par2 ON Resources(Parent2 ASC);"
+	sql += "CREATE INDEX IF NOT EXISTS trans_id ON Transactions(ID ASC);"
+	sql += "CREATE INDEX IF NOT EXISTS trans_sender ON Transactions(SenderID ASC);"
+	sql += "CREATE INDEX IF NOT EXISTS trans_receiver ON Transactions(ReceiverID ASC);"
+	sql += "CREATE INDEX IF NOT EXISTS transres_transid ON TransactedResources(TransactionID ASC);"
+	return conn.Exec(sql)
 }
 
 func fatal(err error) {
@@ -136,3 +123,4 @@ func fatal(err error) {
 		log.Fatal(err)
 	}
 }
+
