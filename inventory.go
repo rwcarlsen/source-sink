@@ -5,7 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
+	"runtime/pprof"
 	"strconv"
+	"time"
 
 	"code.google.com/p/go-sqlite/go1/sqlite3"
 )
@@ -15,7 +18,8 @@ var inven = flag.Bool("inventory", false, "print time series of agent's resource
 var changes = flag.Bool("changes", false, "print time series of changes to agent's resource id inventory")
 var qty = flag.Bool("qty", false, "show quantities in dot graph")
 var allAgents = flag.Bool("all", false, "do stuff for each agent")
-var agentId int
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+var agentId int32
 
 var conn *sqlite3.Conn
 
@@ -23,11 +27,21 @@ func main() {
 	log.SetFlags(0)
 	flag.Parse()
 
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
+
 	fname := flag.Arg(0)
 
 	var err error
 	if flag.NArg() > 1 {
-		agentId, err = strconv.Atoi(flag.Arg(1))
+		v, err := strconv.Atoi(flag.Arg(1))
+		agentId = int32(v)
 		fatal(err)
 	}
 
@@ -44,8 +58,10 @@ func main() {
 	} else if *changes {
 		outputChanges()
 	} else {
-		outputAgentGraph()
+		go outputAgentGraph()
 	}
+
+	<-time.After(60 * time.Second)
 }
 
 func outputAllAgents() {
@@ -53,7 +69,7 @@ func outputAllAgents() {
 	fatal(err)
 
 	for i, id := range ids {
-		agentId = id
+		agentId = int32(id)
 		fmt.Printf("building graph %v for agent %v\n", i, id)
 		outputAgentGraph()
 	}
@@ -75,8 +91,8 @@ func outputChanges() {
 	roots, err := BuildAgentGraph(conn, agentId)
 	fatal(err)
 
-	added := map[int]map[*Node]bool{}
-	removed := map[int]map[*Node]bool{}
+	added := map[int32]map[*Node]bool{}
+	removed := map[int32]map[*Node]bool{}
 	for _, node := range roots {
 		node.Changes(added, removed)
 	}
@@ -109,14 +125,14 @@ func outputTimeInventory() {
 }
 
 func outputFullTree() {
-	roots, err := BuildResTree(conn)
-	fatal(err)
+	//roots, err := BuildResTree(conn)
+	//fatal(err)
 
-	edges := EdgeSet{}
-	for _, node := range roots {
-		edges.Union(node.DotEdges())
-	}
-	fmt.Println(BuildDot("ResourceTree", edges.Slice()))
+	//edges := EdgeSet{}
+	//for _, node := range roots {
+	//	edges.Union(node.DotEdges())
+	//}
+	//fmt.Println(BuildDot("ResourceTree", edges.Slice()))
 }
 
 func BuildDot(title string, edges []string) string {

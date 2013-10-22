@@ -21,9 +21,8 @@ func (es EdgeSet) Union(other EdgeSet) {
 }
 
 type Node struct {
-	Id       int
-	Time     int
-	Qty      float64
+	Id       int32
+	Time     int32
 	Parent   *Node
 	Children []*Node
 }
@@ -46,11 +45,11 @@ func (n *Node) AddChild(child *Node) {
 	child.Parent = n
 }
 
-func (n *Node) Changes(added, removed map[int]map[*Node]bool) {
+func (n *Node) Changes(added, removed map[int32]map[*Node]bool) {
 	n.changes(added, removed)
 }
 
-func (n *Node) changes(added, removed map[int]map[*Node]bool) {
+func (n *Node) changes(added, removed map[int32]map[*Node]bool) {
 	if _, ok := added[n.Time]; !ok {
 		added[n.Time] = map[*Node]bool{}
 	}
@@ -67,7 +66,7 @@ func (n *Node) changes(added, removed map[int]map[*Node]bool) {
 	}
 }
 
-func (n *Node) ChoppedLeaves(choptime int) []*Node {
+func (n *Node) ChoppedLeaves(choptime int32) []*Node {
 	leaves := []*Node{}
 	if n.IsLeaf(choptime) {
 		leaves = append(leaves, n)
@@ -83,7 +82,7 @@ func (n *Node) ChoppedLeaves(choptime int) []*Node {
 	return leaves
 }
 
-func (n *Node) IsLeaf(choptime int) bool {
+func (n *Node) IsLeaf(choptime int32) bool {
 	for _, child := range n.Children {
 		if child.Time < choptime {
 			return false
