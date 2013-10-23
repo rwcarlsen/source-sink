@@ -22,7 +22,7 @@ std::vector<cyc::Resource::Ptr> Source::RemoveResource(cyc::Transaction
 void Source::HandleTick(int time) {
   // update inventory
   if (inventory_.space() > 0) {
-    cyc::GenericResource::Ptr r = cyc::GenericResource::Create(context(),
+    cyc::GenericResource::Ptr r = cyc::GenericResource::Create(this,
                                                                inventory_.space(), qual_, units_);
     inventory_.Push(r);
   }
