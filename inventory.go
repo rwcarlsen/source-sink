@@ -1,11 +1,11 @@
 package main
 
 import (
-	"time"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"os"
 	"runtime/pprof"
 
@@ -53,23 +53,22 @@ func main() {
 	fmt.Printf("Found %v root nodes\n", len(roots))
 	allNodes := make([][]*Node, len(roots))
 	count := 0
-	go func() {
-		for i, root := range roots {
-			fmt.Printf("Processing root %d...\n", i)
-			nodes, err := WalkDown(conn, root)
-			fmt.Printf("    ran %d queries.\n", queryCount)
-			fatal(err)
-			allNodes[i] = nodes
-			count += len(nodes)
-			if count >= dumpfreq {
-				fmt.Println("dumping to inventories table...")
-				fatal(DumpNodes(conn, allNodes))
-				count = 0
-				allNodes = allNodes[:0]
-			}
+	for i, root := range roots {
+		fmt.Printf("Processing root %d...\n", i)
+		nodes, err := WalkDown(conn, root)
+		fmt.Printf("  query_count = %d\n", queryCount)
+		fatal(err)
+		allNodes[i] = nodes
+		count += len(nodes)
+		if count >= dumpfreq {
+			fmt.Println("dumping to inventories table...")
+			fatal(DumpNodes(conn, allNodes))
+			count = 0
+			allNodes = allNodes[:0]
 		}
-	}()
-	<-time.After(120 * time.Second)
+	}
+	fmt.Println("dumping to inventories table...")
+	fatal(DumpNodes(conn, allNodes))
 }
 
 func CreateNodeTable(conn *sqlite3.Conn) (err error) {
@@ -118,7 +117,7 @@ func GetRoots(conn *sqlite3.Conn) (roots []*Node, err error) {
 	sql := `SELECT ID,TimeCreated,ModelID FROM Resources 
 	          INNER JOIN ResCreators ON ID = ResID`
 	for stmt, err = conn.Query(sql); err == nil; err = stmt.Next() {
-		node := &Node{}
+		node := &Node{EndTime: math.MaxInt32}
 		if err := stmt.Scan(&node.ResId, &node.StartTime, &node.OwnerId); err != nil {
 			return nil, err
 		}
@@ -149,8 +148,10 @@ func WalkDown(conn *sqlite3.Conn, node *Node) (nodes []*Node, err error) {
 		}
 	}
 
+	count := 0
+	kids := make([]*Node, 0, 2)
 	for err = resStmt.Query(node.ResId, node.ResId); err == nil; err = resStmt.Next() {
-		child := &Node{}
+		child := &Node{EndTime: math.MaxInt32}
 		if err := resStmt.Scan(&child.ResId, &child.StartTime); err != nil {
 			return nil, err
 		}
@@ -163,26 +164,30 @@ func WalkDown(conn *sqlite3.Conn, node *Node) (nodes []*Node, err error) {
 			node.EndTime = times[0]
 			child.OwnerId = owners[len(owners)-1]
 
-			last := len(owners) - 1
-			for i := range owners[:last] {
+			times = append(times, child.StartTime)
+			for i := range owners {
 				nodes = append(nodes, &Node{ResId: node.ResId, OwnerId: owners[i], StartTime: times[i], EndTime: times[i+1]})
 			}
-			nodes = append(nodes, &Node{ResId: node.ResId, OwnerId: owners[last], StartTime: times[last], EndTime: child.StartTime})
 		} else {
 			node.EndTime = child.StartTime
 			child.OwnerId = node.OwnerId
 		}
-		nodes = append(nodes, node)
 
+		kids = append(kids, child)
+		count++
+	}
+	if err != io.EOF {
+		return nil, err
+	}
+
+	for _, child := range kids {
 		subnodes, err := WalkDown(conn, child)
 		if err != nil {
 			return nil, err
 		}
 		nodes = append(nodes, subnodes...)
 	}
-	if err != io.EOF {
-		return nil, err
-	}
+	nodes = append(nodes, node)
 	return nodes, nil
 }
 
