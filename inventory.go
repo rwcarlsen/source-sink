@@ -8,7 +8,6 @@ import (
 	"math"
 	"os"
 	"runtime/pprof"
-	"time"
 
 	"code.google.com/p/go-sqlite/go1/sqlite3"
 )
@@ -53,35 +52,14 @@ func main() {
 	fatal(err)
 	fmt.Printf("Found %v root nodes\n", len(roots))
 
-	// row creating loop
-	ch := make(chan *Node)
-	unpause := make(chan bool)
-	go func() {
-		for i, root := range roots {
-			fmt.Printf("Processing root %d...\n", i)
-			err := WalkDown(conn, root, ch, unpause)
-			fatal(err)
-		}
-		close(ch)
-	}()
-
-	// row writing loop
-	writeconn, err := sqlite3.Open(fname)
-	fatal(err)
-	defer writeconn.Close()
-
 	nodes := make([]*Node, 0, 100000)
-	for node := range ch {
-		nodes = append(nodes, node)
-		if len(nodes) >= dumpfreq {
-			fmt.Println("dumping to inventories table...")
-			fatal(DumpNodes(writeconn, nodes))
-			nodes = nodes[:0]
-		}
-		unpause <- true
+	for i, root := range roots {
+		fmt.Printf("Processing root %d...\n", i)
+		err := WalkDown(conn, root, &nodes)
+		fatal(err)
 	}
-	fmt.Println("dumping to inventories table...")
-	fatal(DumpNodes(writeconn, nodes))
+	fmt.Println("dumping final remaining inventories...")
+	fatal(DumpNodes(conn, nodes))
 }
 
 func CreateNodeTable(conn *sqlite3.Conn) (err error) {
@@ -142,18 +120,25 @@ func GetRoots(conn *sqlite3.Conn) (roots []*Node, err error) {
 
 var mappednodes = map[int32]struct{}{}
 var resStmt *sqlite3.Stmt
-var nodeCount = 0
+var resCount = 0
 
-func WalkDown(conn *sqlite3.Conn, node *Node, ch chan *Node, unpause chan bool) (err error) {
+func WalkDown(conn *sqlite3.Conn, node *Node, nodes *[]*Node) (err error) {
 	if _, ok := mappednodes[int32(node.ResId)]; ok {
 		return
 	}
 	mappednodes[int32(node.ResId)] = struct{}{}
-	nodeCount++
-	if nodeCount % 10000 == 0 {
-		fmt.Printf("%d resources done\n", nodeCount)
+
+	// dump if necessary
+	resCount++
+	if resCount % dumpfreq == 0 {
+		fmt.Printf("dumping inventories (%d resources done)\n", resCount)
+		if err := DumpNodes(conn, *nodes); err != nil {
+			return err
+		}
+		*nodes = (*nodes)[:0]
 	}
 
+	// prime sql prepared stmt
 	if resStmt == nil {
 		sql := "SELECT ID,TimeCreated FROM Resources WHERE Parent1 = ? OR Parent2 = ?"
 		resStmt, err = conn.Prepare(sql)
@@ -162,6 +147,7 @@ func WalkDown(conn *sqlite3.Conn, node *Node, ch chan *Node, unpause chan bool) 
 		}
 	}
 
+	// find resource's children and resource owners
 	kids := make([]*Node, 0, 2)
 	for err = resStmt.Query(node.ResId, node.ResId); err == nil; err = resStmt.Next() {
 		child := &Node{EndTime: math.MaxInt32}
@@ -179,8 +165,8 @@ func WalkDown(conn *sqlite3.Conn, node *Node, ch chan *Node, unpause chan bool) 
 
 			times = append(times, child.StartTime)
 			for i := range owners {
-				ch <-&Node{ResId: node.ResId, OwnerId: owners[i], StartTime: times[i], EndTime: times[i+1]}
-				<-unpause
+				n := &Node{ResId: node.ResId, OwnerId: owners[i], StartTime: times[i], EndTime: times[i+1]}
+				*nodes = append(*nodes, n)
 			}
 		} else {
 			node.EndTime = child.StartTime
@@ -193,14 +179,15 @@ func WalkDown(conn *sqlite3.Conn, node *Node, ch chan *Node, unpause chan bool) 
 		return err
 	}
 
+	// walk down resource's children
 	for _, child := range kids {
-		err := WalkDown(conn, child, ch, unpause)
+		err := WalkDown(conn, child, nodes)
 		if err != nil {
 			return err
 		}
 	}
-	ch<-node
-	<-unpause
+
+	*nodes = append(*nodes, node)
 	return nil
 }
 
@@ -252,30 +239,3 @@ func fatal(err error) {
 	}
 }
 
-type Timer struct {
-	Totals map[string]time.Duration
-	starts map[string]time.Time
-}
-
-func NewTimer() *Timer {
-	return &Timer{
-		Totals: make(map[string]time.Duration),
-		starts: make(map[string]time.Time),
-	}
-}
-
-func (t *Timer) Start(label string) {
-	t.starts[label] = time.Now()
-}
-
-func (t *Timer) Total(label string) time.Duration {
-	return t.Totals[label]
-}
-
-func (t *Timer) Stop(label string) {
-	stop := time.Now()
-	if start, ok := t.starts[label]; ok {
-		t.Totals[label] += stop.Sub(start)
-		delete(t.starts, label)
-	}
-}
