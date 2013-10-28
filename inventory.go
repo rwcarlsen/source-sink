@@ -42,26 +42,20 @@ func main() {
 
 	conn, err := sqlite3.Open(fname)
 	fatal(err)
-	defer conn.Close()
-
-	fmt.Println("Creating indexes...")
-	fatal(CreateIndex(conn))
-	fmt.Println("Creating inventories table...")
-	fatal(CreateNodeTable(conn))
+	ctx := &Context{Conn: conn}
+	defer ctx.Close()
+	fatal(ctx.Init())
 
 	fmt.Println("Retrieving root resource nodes...")
 	roots, err := GetRoots(conn)
 	fatal(err)
 	fmt.Printf("Found %v root nodes\n", len(roots))
 
-	nodes := make([]*Node, 0, 100000)
 	for i, root := range roots {
 		fmt.Printf("Processing root %d...\n", i)
-		err := WalkDown(conn, root, &nodes)
+		err := ctx.WalkDown(root)
 		fatal(err)
 	}
-	fmt.Println("dumping final remaining inventories...")
-	fatal(DumpNodes(conn, nodes))
 }
 
 func GetRoots(conn *sqlite3.Conn) (roots []*Node, err error) {
@@ -91,15 +85,15 @@ func GetRoots(conn *sqlite3.Conn) (roots []*Node, err error) {
 }
 
 const (
-	dumpSql   = "INSERT INTO Inventories VALUES (?,?,?,?)"
-	createSql = "CREATE TABLE IF NOT EXISTS Inventories (ResID INTEGER,AgentID INTEGER,StartTime INTEGER,EndTime INTEGER);"
-	resSql    = "SELECT ID,TimeCreated FROM Resources WHERE Parent1 = ? OR Parent2 = ?"
-	ownerSql  = `SELECT tr.ReceiverID, tr.Time FROM Transactions AS tr
+	dumpSql  = "INSERT INTO Inventories VALUES (?,?,?,?)"
+	resSql   = "SELECT ID,TimeCreated FROM Resources WHERE Parent1 = ? OR Parent2 = ?"
+	ownerSql = `SELECT tr.ReceiverID, tr.Time FROM Transactions AS tr
 				  INNER JOIN TransactedResources AS trr ON tr.ID = trr.TransactionID
 				  WHERE trr.ResourceID = ? ORDER BY tr.Time ASC;`
 )
 
-var indexSql = []string{
+var execStmts = []string{
+	"CREATE TABLE IF NOT EXISTS Inventories (ResID INTEGER,AgentID INTEGER,StartTime INTEGER,EndTime INTEGER);",
 	"CREATE INDEX IF NOT EXISTS res_id ON Resources(ID ASC);",
 	"CREATE INDEX IF NOT EXISTS res_par1 ON Resources(Parent1 ASC);",
 	"CREATE INDEX IF NOT EXISTS res_par2 ON Resources(Parent2 ASC);",
@@ -113,47 +107,48 @@ var indexSql = []string{
 
 type Context struct {
 	*sqlite3.Conn
-	DumpStmt *sqlite3.Stmt
-	ResStmt  *sqlite3.Stmt
-	Nodes    []*Node
+	dumpStmt  *sqlite3.Stmt
+	resStmt   *sqlite3.Stmt
+	ownerStmt *sqlite3.Stmt
+	resCount  int
+	Nodes     []*Node
 }
 
 func (c *Context) Init() (err error) {
 	c.Nodes = make([]*Node, 0, 10000)
 
-	c.DumpStmt, err = c.Prepare(dumpSql)
-	if err != nil {
-		return err
-	}
-
-	c.ResStmt, err = c.Prepare(resSql)
-	if err != nil {
-		return err
-	}
-
-	err = c.Exec(createSql)
-	if err != nil {
-		return err
-	}
-
-	c.OwnerStmt, err = c.Prepare(ownerSql)
-	if err != nil {
-		return err
-	}
-
-	for _, sql := range indexSql {
+	fmt.Println("Creating indexes and inventory table...")
+	for _, sql := range execStmts {
 		if err := c.Exec(sql); err != nil {
 			return err
 		}
 	}
+
+	c.dumpStmt, err = c.Prepare(dumpSql)
+	if err != nil {
+		return err
+	}
+
+	c.resStmt, err = c.Prepare(resSql)
+	if err != nil {
+		return err
+	}
+
+	c.ownerStmt, err = c.Prepare(ownerSql)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (c *Context) DumpNodes() (err error) {
+	fmt.Printf("dumping inventories (%d resources done)\n", c.resCount)
 	if err := c.Exec("BEGIN TRANSACTION;"); err != nil {
 		return err
 	}
 	for _, n := range c.Nodes {
-		if err = c.DumpStmt.Exec(n.ResId, n.OwnerId, n.StartTime, n.EndTime); err != nil {
+		if err = c.dumpStmt.Exec(n.ResId, n.OwnerId, n.StartTime, n.EndTime); err != nil {
 			return err
 		}
 	}
@@ -164,8 +159,6 @@ func (c *Context) DumpNodes() (err error) {
 	return nil
 }
 
-var resCount = 0
-
 func (c *Context) WalkDown(node *Node) (err error) {
 	if _, ok := mappednodes[int32(node.ResId)]; ok {
 		return
@@ -173,9 +166,8 @@ func (c *Context) WalkDown(node *Node) (err error) {
 	mappednodes[int32(node.ResId)] = struct{}{}
 
 	// dump if necessary
-	resCount++
-	if resCount%dumpfreq == 0 {
-		fmt.Printf("dumping inventories (%d resources done)\n", resCount)
+	c.resCount++
+	if c.resCount%dumpfreq == 0 {
 		if err := c.DumpNodes(); err != nil {
 			return err
 		}
@@ -183,9 +175,9 @@ func (c *Context) WalkDown(node *Node) (err error) {
 
 	// find resource's children and resource owners
 	kids := make([]*Node, 0, 2)
-	for err = c.ResStmt.Query(node.ResId, node.ResId); err == nil; err = c.ResStmt.Next() {
+	for err = c.resStmt.Query(node.ResId, node.ResId); err == nil; err = c.resStmt.Next() {
 		child := &Node{EndTime: math.MaxInt32}
-		if err := c.ResStmt.Scan(&child.ResId, &child.StartTime); err != nil {
+		if err := c.resStmt.Scan(&child.ResId, &child.StartTime); err != nil {
 			return err
 		}
 
@@ -200,7 +192,7 @@ func (c *Context) WalkDown(node *Node) (err error) {
 			times = append(times, child.StartTime)
 			for i := range owners {
 				n := &Node{ResId: node.ResId, OwnerId: owners[i], StartTime: times[i], EndTime: times[i+1]}
-				c(c * Context).nodes = append(c.nodes, n)
+				c.Nodes = append(c.Nodes, n)
 			}
 		} else {
 			node.EndTime = child.StartTime
@@ -221,14 +213,24 @@ func (c *Context) WalkDown(node *Node) (err error) {
 		}
 	}
 
-	c.nodes = append(c.nodes, node)
+	c.Nodes = append(c.Nodes, node)
 	return nil
+}
+
+func (c *Context) Close() (err error) {
+	if err2 := c.DumpNodes(); err2 != nil {
+		err = err2
+	}
+	if err2 := c.Conn.Close(); err2 != nil {
+		err = err2
+	}
+	return err
 }
 
 func (c *Context) GetNewOwners(id int) (owners, times []int, err error) {
 	var owner, t int
-	for err = c.OwnerStmt.Query(id); err == nil; err = c.OwnerStmt.Next() {
-		if err := c.OwnerStmt.Scan(&owner, &t); err != nil {
+	for err = c.ownerStmt.Query(id); err == nil; err = c.ownerStmt.Next() {
+		if err := c.ownerStmt.Scan(&owner, &t); err != nil {
 			return nil, nil, err
 		}
 		owners = append(owners, owner)
