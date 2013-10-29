@@ -6,20 +6,9 @@ import (
 	"io"
 	"log"
 	"math"
-	"os"
-	"runtime/pprof"
 
 	"code.google.com/p/go-sqlite/go1/sqlite3"
 )
-
-type Node struct {
-	ResId     int
-	OwnerId   int
-	StartTime int
-	EndTime   int
-}
-
-var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
 const dumpfreq = 100000
 
@@ -30,21 +19,13 @@ func main() {
 	flag.Parse()
 	fname := flag.Arg(0)
 
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer f.Close()
-		pprof.StartCPUProfile(f)
-		defer pprof.StopCPUProfile()
-	}
-
 	conn, err := sqlite3.Open(fname)
 	fatal(err)
+	defer conn.Close()
+
 	ctx := &Context{Conn: conn}
-	defer ctx.Close()
 	fatal(ctx.Init())
+	defer ctx.Finish()
 
 	fmt.Println("Retrieving root resource nodes...")
 	roots, err := GetRoots(conn)
@@ -53,9 +34,15 @@ func main() {
 
 	for i, root := range roots {
 		fmt.Printf("Processing root %d...\n", i)
-		err := ctx.WalkDown(root)
-		fatal(err)
+		fatal(ctx.WalkDown(root))
 	}
+}
+
+type Node struct {
+	ResId     int
+	OwnerId   int
+	StartTime int
+	EndTime   int
 }
 
 func GetRoots(conn *sqlite3.Conn) (roots []*Node, err error) {
@@ -84,15 +71,7 @@ func GetRoots(conn *sqlite3.Conn) (roots []*Node, err error) {
 	return roots, nil
 }
 
-const (
-	dumpSql  = "INSERT INTO Inventories VALUES (?,?,?,?)"
-	resSql   = "SELECT ID,TimeCreated FROM Resources WHERE Parent1 = ? OR Parent2 = ?"
-	ownerSql = `SELECT tr.ReceiverID, tr.Time FROM Transactions AS tr
-				  INNER JOIN TransactedResources AS trr ON tr.ID = trr.TransactionID
-				  WHERE trr.ResourceID = ? ORDER BY tr.Time ASC;`
-)
-
-var execStmts = []string{
+var preExecStmts = []string{
 	"CREATE TABLE IF NOT EXISTS Inventories (ResID INTEGER,AgentID INTEGER,StartTime INTEGER,EndTime INTEGER);",
 	"CREATE INDEX IF NOT EXISTS res_id ON Resources(ID ASC);",
 	"CREATE INDEX IF NOT EXISTS res_par1 ON Resources(Parent1 ASC);",
@@ -110,6 +89,20 @@ var execStmts = []string{
 	"CREATE INDEX IF NOT EXISTS agent_id ON Agents(ID ASC);",
 }
 
+var postExecStmts = []string{
+	"CREATE INDEX IF NOT EXISTS inv_agent ON Inventories(AgentID ASC);",
+	"CREATE INDEX IF NOT EXISTS inv_start ON Inventories(StartTime ASC);",
+	"CREATE INDEX IF NOT EXISTS inv_end ON Inventories(EndTime ASC);",
+}
+
+const (
+	dumpSql  = "INSERT INTO Inventories VALUES (?,?,?,?)"
+	resSql   = "SELECT ID,TimeCreated FROM Resources WHERE Parent1 = ? OR Parent2 = ?"
+	ownerSql = `SELECT tr.ReceiverID, tr.Time FROM Transactions AS tr
+				  INNER JOIN TransactedResources AS trr ON tr.ID = trr.TransactionID
+				  WHERE trr.ResourceID = ? ORDER BY tr.Time ASC;`
+)
+
 type Context struct {
 	*sqlite3.Conn
 	dumpStmt  *sqlite3.Stmt
@@ -123,7 +116,7 @@ func (c *Context) Init() (err error) {
 	c.Nodes = make([]*Node, 0, 10000)
 
 	fmt.Println("Creating indexes and inventory table...")
-	for _, sql := range execStmts {
+	for _, sql := range preExecStmts {
 		if err := c.Exec(sql); err != nil {
 			return err
 		}
@@ -147,24 +140,24 @@ func (c *Context) Init() (err error) {
 	return nil
 }
 
-func (c *Context) DumpNodes() (err error) {
-	fmt.Printf("dumping inventories (%d resources done)\n", c.resCount)
-	if err := c.Exec("BEGIN TRANSACTION;"); err != nil {
-		return err
-	}
-	for _, n := range c.Nodes {
-		if err = c.dumpStmt.Exec(n.ResId, n.OwnerId, n.StartTime, n.EndTime); err != nil {
+func (c *Context) Finish() (err error) {
+	fmt.Println("Creating inventory indexes...")
+	for _, sql := range postExecStmts {
+		if err := c.Exec(sql); err != nil {
 			return err
 		}
 	}
-	if err := c.Exec("END TRANSACTION;"); err != nil {
-		return err
-	}
-	c.Nodes = c.Nodes[:0]
 	return nil
 }
 
 func (c *Context) WalkDown(node *Node) (err error) {
+	if err := c.walkDown(node); err != nil {
+		return err
+	}
+	return c.DumpNodes()
+}
+
+func (c *Context) walkDown(node *Node) (err error) {
 	if _, ok := mappednodes[int32(node.ResId)]; ok {
 		return
 	}
@@ -186,7 +179,7 @@ func (c *Context) WalkDown(node *Node) (err error) {
 			return err
 		}
 
-		owners, times, err := c.GetNewOwners(node.ResId)
+		owners, times, err := c.getNewOwners(node.ResId)
 		if err != nil {
 			return err
 		}
@@ -212,7 +205,7 @@ func (c *Context) WalkDown(node *Node) (err error) {
 
 	// walk down resource's children
 	for _, child := range kids {
-		err := c.WalkDown(child)
+		err := c.walkDown(child)
 		if err != nil {
 			return err
 		}
@@ -222,17 +215,7 @@ func (c *Context) WalkDown(node *Node) (err error) {
 	return nil
 }
 
-func (c *Context) Close() (err error) {
-	if err2 := c.DumpNodes(); err2 != nil {
-		err = err2
-	}
-	if err2 := c.Conn.Close(); err2 != nil {
-		err = err2
-	}
-	return err
-}
-
-func (c *Context) GetNewOwners(id int) (owners, times []int, err error) {
+func (c *Context) getNewOwners(id int) (owners, times []int, err error) {
 	var owner, t int
 	for err = c.ownerStmt.Query(id); err == nil; err = c.ownerStmt.Next() {
 		if err := c.ownerStmt.Scan(&owner, &t); err != nil {
@@ -245,6 +228,23 @@ func (c *Context) GetNewOwners(id int) (owners, times []int, err error) {
 		return nil, nil, err
 	}
 	return owners, times, nil
+}
+
+func (c *Context) DumpNodes() (err error) {
+	fmt.Printf("dumping inventories (%d resources done)\n", c.resCount)
+	if err := c.Exec("BEGIN TRANSACTION;"); err != nil {
+		return err
+	}
+	for _, n := range c.Nodes {
+		if err = c.dumpStmt.Exec(n.ResId, n.OwnerId, n.StartTime, n.EndTime); err != nil {
+			return err
+		}
+	}
+	if err := c.Exec("END TRANSACTION;"); err != nil {
+		return err
+	}
+	c.Nodes = c.Nodes[:0]
+	return nil
 }
 
 func fatal(err error) {
