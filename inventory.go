@@ -97,12 +97,17 @@ var execStmts = []string{
 	"CREATE INDEX IF NOT EXISTS res_id ON Resources(ID ASC);",
 	"CREATE INDEX IF NOT EXISTS res_par1 ON Resources(Parent1 ASC);",
 	"CREATE INDEX IF NOT EXISTS res_par2 ON Resources(Parent2 ASC);",
+	"CREATE INDEX IF NOT EXISTS res_state ON Resources(StateID ASC);",
+	"CREATE INDEX IF NOT EXISTS comp_id ON Compositions(ID ASC);",
+	"CREATE INDEX IF NOT EXISTS comp_iso ON Compositions(IsoID ASC);",
 	"CREATE INDEX IF NOT EXISTS trans_id ON Transactions(ID ASC);",
 	"CREATE INDEX IF NOT EXISTS trans_time ON Transactions(Time ASC);",
 	"CREATE INDEX IF NOT EXISTS trans_receiver ON Transactions(ReceiverID ASC);",
 	"CREATE INDEX IF NOT EXISTS transres_transid ON TransactedResources(TransactionID ASC);",
 	"CREATE INDEX IF NOT EXISTS transres_resid ON TransactedResources(ResourceID ASC);",
 	"CREATE INDEX IF NOT EXISTS rescreate_resid ON ResCreators(ResID ASC);",
+	"CREATE INDEX IF NOT EXISTS agent_proto ON Agents(Prototype ASC);",
+	"CREATE INDEX IF NOT EXISTS agent_id ON Agents(ID ASC);",
 }
 
 type Context struct {
