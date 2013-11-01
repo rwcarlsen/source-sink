@@ -155,56 +155,56 @@ func (c *Context) init() (err error) {
 	fmt.Println("Creating temporary resource table...")
 	c.tmpResTbl = "tmp_restbl_" + strings.Replace(c.Simid, "-", "_", -1)
 	if err := c.Exec("DROP TABLE IF EXISTS " + c.tmpResTbl); err != nil {
-		panic(err)
+		return err
 	}
 	sql := "CREATE TABLE " + c.tmpResTbl + " AS SELECT ID,TimeCreated,Parent1,Parent2 FROM Resources WHERE SimID = ?;"
 	if err := c.Exec(sql, c.Simid); err != nil {
-		panic(err)
+		return err
 	}
 	fmt.Println("Indexing temporary resource table...")
 	if err := c.Exec(Index(c.tmpResTbl, "Parent1")); err != nil {
-		panic(err)
+		return err
 	}
 	if err := c.Exec(Index(c.tmpResTbl, "Parent2")); err != nil {
-		panic(err)
+		return err
 	}
 
 	// create prepared statements
 	c.tmpResStmt, err = c.Prepare(resSqlHead + c.tmpResTbl + resSqlTail)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	c.dumpStmt, err = c.Prepare(dumpSql)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	c.ownerStmt, err = c.Prepare(ownerSql)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	return nil
 }
 
 func (c *Context) WalkAll() (err error) {
 	if err := c.init(); err != nil {
-		panic(err)
+		return err
 	}
 	fmt.Println("Retrieving root resource nodes...")
 	roots, err := c.getRoots()
 	if err != nil {
-		panic(err)
+		return err
 	}
 	fmt.Printf("Found %v root nodes\n", len(roots))
 	for i, n := range roots {
 		fmt.Printf("    Processing root %d...\n", i)
 		if err := c.walkNode(n); err != nil {
-			panic(err)
+			return err
 		}
 	}
 	fmt.Println("Dropping temporary resource table...")
 	if err := c.Exec("DROP TABLE " + c.tmpResTbl); err != nil {
-		panic(err)
+		return err
 	}
 	return c.dumpNodes()
 }
@@ -237,7 +237,7 @@ func (c *Context) getRoots() (roots []*Node, err error) {
 
 func (c *Context) walkNode(node *Node) (err error) {
 	if err := c.walkDown(node); err != nil {
-		panic(err)
+		return err
 	}
 	return nil
 }
@@ -252,55 +252,57 @@ func (c *Context) walkDown(node *Node) (err error) {
 	c.resCount++
 	if c.resCount%dumpfreq == 0 {
 		if err := c.dumpNodes(); err != nil {
-			panic(err)
+			return err
 		}
 	}
 
-	// find resource's children and resource owners
+	// find resource's children
 	kids := make([]*Node, 0, 2)
-
 	err = c.tmpResStmt.Query(node.ResId, node.ResId)
-
 	for ; err == nil; err = c.tmpResStmt.Next() {
 		child := &Node{EndTime: math.MaxInt32}
 		if err := c.tmpResStmt.Scan(&child.ResId, &child.StartTime); err != nil {
-			panic(err)
+			return err
 		}
-
-		owners, times, err := c.getNewOwners(node.ResId)
-		if err != nil {
-			panic(err)
-		}
-
-		if len(owners) > 0 {
-			node.EndTime = times[0]
-			child.OwnerId = owners[len(owners)-1]
-
-			times = append(times, child.StartTime)
-			for i := range owners {
-				n := &Node{ResId: node.ResId, OwnerId: owners[i], StartTime: times[i], EndTime: times[i+1]}
-				c.Nodes = append(c.Nodes, n)
-			}
-		} else {
-			node.EndTime = child.StartTime
-			child.OwnerId = node.OwnerId
-		}
-
+		node.EndTime = child.StartTime
 		kids = append(kids, child)
 	}
 	if err != io.EOF {
-		panic(err)
+		return err
 	}
 
-	// walk down resource's children
-	for _, child := range kids {
-		err := c.walkDown(child)
-		if err != nil {
-			panic(err)
+	// find resources owner changes (that occurred before children)
+	owners, times, err := c.getNewOwners(node.ResId)
+	if err != nil {
+		return err
+	}
+	childOwner := node.OwnerId
+	if len(owners) > 0 {
+		node.EndTime = times[0]
+		childOwner = owners[len(owners)-1]
+
+		lastend := math.MaxInt32
+		if len(kids) > 0 {
+			lastend = kids[0].StartTime
+		}
+		times = append(times, lastend)
+		for i := range owners {
+			n := &Node{ResId: node.ResId, OwnerId: owners[i], StartTime: times[i], EndTime: times[i+1]}
+			c.Nodes = append(c.Nodes, n)
 		}
 	}
 
 	c.Nodes = append(c.Nodes, node)
+
+	// walk down resource's children
+	for _, child := range kids {
+		child.OwnerId = childOwner
+		err := c.walkDown(child)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -312,6 +314,9 @@ func (c *Context) getNewOwners(id int) (owners, times []int, err error) {
 	for ; err == nil; err = c.ownerStmt.Next() {
 		if err := c.ownerStmt.Scan(&owner, &t); err != nil {
 			return nil, nil, err
+		}
+		if id == owner {
+			continue
 		}
 		owners = append(owners, owner)
 		times = append(times, t)
@@ -325,15 +330,15 @@ func (c *Context) getNewOwners(id int) (owners, times []int, err error) {
 func (c *Context) dumpNodes() (err error) {
 	fmt.Printf("Dumping inventories (%d resources done)...\n", c.resCount)
 	if err := c.Exec("BEGIN TRANSACTION;"); err != nil {
-		panic(err)
+		return err
 	}
 	for _, n := range c.Nodes {
 		if err = c.dumpStmt.Exec(c.Simid, n.ResId, n.OwnerId, n.StartTime, n.EndTime); err != nil {
-			panic(err)
+			return err
 		}
 	}
 	if err := c.Exec("END TRANSACTION;"); err != nil {
-		panic(err)
+		return err
 	}
 	c.Nodes = c.Nodes[:0]
 	return nil
