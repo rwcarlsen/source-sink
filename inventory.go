@@ -2,11 +2,11 @@ package main
 
 import (
 	"flag"
-	"time"
 	"fmt"
 	"io"
 	"log"
 	"math"
+	"time"
 
 	"code.google.com/p/go-sqlite/go1/sqlite3"
 )
@@ -29,15 +29,6 @@ func main() {
 
 	simids, err := GetSimIds(conn)
 	fatal(err)
-
-	//ti.Start("test")
-	//for i := 0; i < 10000; i++ {
-	//	_, err := conn.Query(resSql, simids[0], 19, 19)
-	//	fatal(err)
-	//}
-	//ti.Stop("test")
-	//fmt.Printf("testloop: %v\n", ti.Totals["test"])
-	//return
 
 	for _, simid := range simids {
 		ctx := &Context{Conn: conn, Simid: simid}
@@ -67,8 +58,8 @@ var (
 		"CREATE INDEX IF NOT EXISTS res_id ON Resources(ID ASC);",
 		"CREATE INDEX IF NOT EXISTS res_par1 ON Resources(Parent1 ASC);",
 		"CREATE INDEX IF NOT EXISTS res_par2 ON Resources(Parent2 ASC);",
-		"CREATE INDEX IF NOT EXISTS res_par3 ON Resources(SimID ASC,Parent1 ASC);",
-		"CREATE INDEX IF NOT EXISTS res_par4 ON Resources(SimID ASC,Parent2 ASC);",
+		//"CREATE INDEX IF NOT EXISTS res_par3 ON Resources(SimID ASC,Parent1 ASC);",
+		//"CREATE INDEX IF NOT EXISTS res_par4 ON Resources(SimID ASC,Parent2 ASC);",
 		"CREATE INDEX IF NOT EXISTS res_state ON Resources(StateID ASC);",
 		"CREATE INDEX IF NOT EXISTS comp_id ON Compositions(ID ASC);",
 		"CREATE INDEX IF NOT EXISTS comp_iso ON Compositions(IsoID ASC);",
@@ -76,20 +67,21 @@ var (
 		"CREATE INDEX IF NOT EXISTS trans_time ON Transactions(Time ASC);",
 		"CREATE INDEX IF NOT EXISTS trans_receiver ON Transactions(ReceiverID ASC);",
 		"CREATE INDEX IF NOT EXISTS transres_transid ON TransactedResources(TransactionID ASC);",
-		"CREATE INDEX IF NOT EXISTS transres_resid ON TransactedResources(SimID ASC,ResourceID ASC);",
+		"CREATE INDEX IF NOT EXISTS transres_resid ON TransactedResources(ResourceID ASC);",
 		"CREATE INDEX IF NOT EXISTS rescreate_resid ON ResCreators(ResID ASC);",
 		"CREATE INDEX IF NOT EXISTS agent_proto ON Agents(Prototype ASC);",
 		"CREATE INDEX IF NOT EXISTS agent_id ON Agents(ID ASC);",
 		// simid indexes
-		"CREATE INDEX IF NOT EXISTS res_simid ON Resources(SimID ASC,Parent1 ASC,Parent2 ASC);",
+		//"CREATE INDEX IF NOT EXISTS res_simid ON Resources(SimID ASC,Parent1 ASC,Parent2 ASC);",
 		//"CREATE INDEX IF NOT EXISTS trans_simid ON Transactions(SimID ASC,ID ASC);",
 		//"CREATE INDEX IF NOT EXISTS transres_simid ON TransactedResources(SimID ASC,TransactionID ASC,ResourceID ASC);",
-		"CREATE INDEX IF NOT EXISTS simid_res ON Resources(SimID ASC);",
-		"CREATE INDEX IF NOT EXISTS simid_transres ON TransactedResources(SimID ASC);",
-		"CREATE INDEX IF NOT EXISTS simid_comp ON Compositions(SimID ASC);",
-		"CREATE INDEX IF NOT EXISTS simid_trans ON Transactions(SimID ASC);",
-		"CREATE INDEX IF NOT EXISTS simid_rescreate ON ResCreators(SimID ASC);",
-		"CREATE INDEX IF NOT EXISTS simid_agent ON Agents(SimID ASC);",
+
+		//"CREATE INDEX IF NOT EXISTS simid_res ON Resources(SimID ASC);",
+		//"CREATE INDEX IF NOT EXISTS simid_transres ON TransactedResources(SimID ASC);",
+		//"CREATE INDEX IF NOT EXISTS simid_comp ON Compositions(SimID ASC);",
+		//"CREATE INDEX IF NOT EXISTS simid_trans ON Transactions(SimID ASC);",
+		//"CREATE INDEX IF NOT EXISTS simid_rescreate ON ResCreators(SimID ASC);",
+		//"CREATE INDEX IF NOT EXISTS simid_agent ON Agents(SimID ASC);",
 	}
 	postExecStmts = []string{
 		"CREATE INDEX IF NOT EXISTS inv_simid ON Inventories(SimID ASC);",
@@ -97,14 +89,14 @@ var (
 		"CREATE INDEX IF NOT EXISTS inv_start ON Inventories(StartTime ASC);",
 		"CREATE INDEX IF NOT EXISTS inv_end ON Inventories(EndTime ASC);",
 	}
-	dumpSql  = "INSERT INTO Inventories VALUES (?,?,?,?,?);"
-	resSql   = "SELECT ID,TimeCreated FROM Resources WHERE SimID = ? AND (Parent1 = ? OR Parent2 = ?);"
+	dumpSql = "INSERT INTO Inventories VALUES (?,?,?,?,?);"
+	resSql  = "SELECT ID,TimeCreated FROM Resources WHERE (Parent1 = ? OR Parent2 = ?);"
+
 	ownerSql = `SELECT tr.ReceiverID, tr.Time FROM Transactions AS tr
 				  INNER JOIN TransactedResources AS trr ON tr.ID = trr.TransactionID
-				  WHERE trr.ResourceID = ? AND tr.SimID = ? ORDER BY tr.Time ASC;`
+				  WHERE trr.ResourceID = ? ORDER BY tr.Time ASC;`
 	rootsSql = `SELECT res.ID,res.TimeCreated,rc.ModelID FROM Resources AS res
-				  INNER JOIN ResCreators AS rc ON res.ID = rc.ResID
-				  WHERE res.SimID = ?;`
+				  INNER JOIN ResCreators AS rc ON res.ID = rc.ResID;`
 )
 
 func Prepare(conn *sqlite3.Conn) (err error) {
@@ -182,8 +174,8 @@ func (c *Context) WalkAll() (err error) {
 }
 
 func (c *Context) getRoots() (roots []*Node, err error) {
-	sql := "SELECT COUNT(*) FROM ResCreators WHERE SimID = ?"
-	stmt, err := c.Query(sql, c.Simid)
+	sql := "SELECT COUNT(*) FROM ResCreators"
+	stmt, err := c.Query(sql)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +185,7 @@ func (c *Context) getRoots() (roots []*Node, err error) {
 	}
 
 	roots = make([]*Node, 0, n)
-	for stmt, err = c.Query(rootsSql, c.Simid); err == nil; err = stmt.Next() {
+	for stmt, err = c.Query(rootsSql); err == nil; err = stmt.Next() {
 		node := &Node{EndTime: math.MaxInt32}
 		if err := stmt.Scan(&node.ResId, &node.StartTime, &node.OwnerId); err != nil {
 			return nil, err
@@ -230,18 +222,31 @@ func (c *Context) walkDown(node *Node) (err error) {
 	ti.Start("res-loop")
 	// find resource's children and resource owners
 	kids := make([]*Node, 0, 2)
-	for err = c.resStmt.Query(c.Simid, node.ResId, node.ResId); err == nil; err = c.resStmt.Next() {
-		fmt.Println("node: ",node)
+
+	ti.Start("res-query")
+	err = c.resStmt.Query(node.ResId, node.ResId)
+	ti.Stop("res-query")
+	//fmt.Printf("res-query: %v\n", ti.Totals["res-query"])
+
+	for ; err == nil; err = c.resStmt.Next() {
+		//fmt.Println("node: ",node)
 		ti.Start("res-inner")
+		ti.Start("res-scan")
 		child := &Node{EndTime: math.MaxInt32}
 		if err := c.resStmt.Scan(&child.ResId, &child.StartTime); err != nil {
 			return err
 		}
+		ti.Stop("res-scan")
+		//fmt.Printf("res-scan: %v\n", ti.Totals["res-scan"])
 
+		ti.Start("res-owners")
 		owners, times, err := c.getNewOwners(node.ResId)
 		if err != nil {
 			return err
 		}
+		ti.Stop("res-owners")
+		//fmt.Printf("res-owners: %v\n", ti.Totals["res-owners"])
+
 		if len(owners) > 0 {
 			node.EndTime = times[0]
 			child.OwnerId = owners[len(owners)-1]
@@ -258,10 +263,10 @@ func (c *Context) walkDown(node *Node) (err error) {
 
 		kids = append(kids, child)
 		ti.Stop("res-inner")
-		fmt.Printf("res-inner: %v\n", ti.Totals["res-inner"])
+		//fmt.Printf("res-inner: %v\n", ti.Totals["res-inner"])
 	}
 	ti.Stop("res-loop")
-	fmt.Printf("res-loop: %v\n", ti.Totals["res-loop"])
+	//fmt.Printf("res-loop: %v\n", ti.Totals["res-loop"])
 	if err != io.EOF {
 		return err
 	}
@@ -284,15 +289,22 @@ func (c *Context) getNewOwners(id int) (owners, times []int, err error) {
 	var owner, t int
 	ti.Start("owner-loop")
 
-	for err = c.ownerStmt.Query(id, c.Simid); err == nil; err = c.ownerStmt.Next() {
+	ti.Start("owner-query")
+	err = c.ownerStmt.Query(id)
+	ti.Stop("owner-query")
+	//fmt.Printf("owner-query: %v\n", ti.Totals["owner-query"])
+	for ; err == nil; err = c.ownerStmt.Next() {
+		ti.Start("owner-scan")
 		if err := c.ownerStmt.Scan(&owner, &t); err != nil {
 			return nil, nil, err
 		}
+		ti.Stop("owner-scan")
+		//fmt.Printf("owner-scan: %v\n", ti.Totals["owner-scan"])
 		owners = append(owners, owner)
 		times = append(times, t)
 	}
 	ti.Stop("owner-loop")
-	fmt.Printf("owner-loop: %v\n", ti.Totals["owner-loop"])
+	//fmt.Printf("owner-loop: %v\n", ti.Totals["owner-loop"])
 	if err != io.EOF {
 		return nil, nil, err
 	}
@@ -346,5 +358,3 @@ func (t *Timer) Stop(label string) {
 	}
 	delete(t.starts, label)
 }
-
-
