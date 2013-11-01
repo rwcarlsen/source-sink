@@ -1,8 +1,8 @@
 package main
 
 import (
-	"flag"
 	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -61,9 +61,9 @@ func Index(table string, cols ...string) string {
 	for _, c := range cols[1:] {
 		buf.WriteString("_" + c)
 	}
-	buf.WriteString(" (" + cols[0] + "ASC")
+	buf.WriteString(" ON " + table + " (" + cols[0] + " ASC")
 	for _, c := range cols[1:] {
-		buf.WriteString("," + c + "ASC")
+		buf.WriteString("," + c + " ASC")
 	}
 	buf.WriteString(");")
 	return buf.String()
@@ -91,7 +91,7 @@ var (
 		//"CREATE INDEX IF NOT EXISTS trans_simid ON Transactions(SimID ASC,ID ASC);",
 		//"CREATE INDEX IF NOT EXISTS transres_simid ON TransactedResources(SimID ASC,TransactionID ASC,ResourceID ASC);",
 
-		"CREATE INDEX IF NOT EXISTS simid_res ON Resources(SimID ASC);",
+		//"CREATE INDEX IF NOT EXISTS simid_res ON Resources(SimID ASC);",
 		//"CREATE INDEX IF NOT EXISTS simid_transres ON TransactedResources(SimID ASC);",
 		//"CREATE INDEX IF NOT EXISTS simid_comp ON Compositions(SimID ASC);",
 		//"CREATE INDEX IF NOT EXISTS simid_trans ON Transactions(SimID ASC);",
@@ -160,9 +160,6 @@ func (c *Context) init() (err error) {
 	// create temp res table without simid
 	fmt.Println("Creating temporary resource table...")
 	c.tmpResTbl = "tmp_restbl_" + strings.Replace(c.Simid, "-", "_", -1)
-	if err := c.Exec("DROP TABLE " + c.tmpResTbl); err != nil {
-		return err
-	}
 	sql := "CREATE TABLE " + c.tmpResTbl + " AS SELECT ID,TimeCreated,Parent1,Parent2 FROM Resources WHERE SimID = ?;"
 	if err := c.Exec(sql, c.Simid); err != nil {
 		return err
@@ -260,33 +257,21 @@ func (c *Context) walkDown(node *Node) (err error) {
 		}
 	}
 
-	ti.Start("res-loop")
 	// find resource's children and resource owners
 	kids := make([]*Node, 0, 2)
 
-	ti.Start("res-query")
 	err = c.tmpResStmt.Query(node.ResId, node.ResId)
-	ti.Stop("res-query")
-	//fmt.Printf("res-query: %v\n", ti.Totals["res-query"])
 
 	for ; err == nil; err = c.tmpResStmt.Next() {
-		//fmt.Println("node: ",node)
-		ti.Start("res-inner")
-		ti.Start("res-scan")
 		child := &Node{EndTime: math.MaxInt32}
 		if err := c.tmpResStmt.Scan(&child.ResId, &child.StartTime); err != nil {
 			return err
 		}
-		ti.Stop("res-scan")
-		//fmt.Printf("res-scan: %v\n", ti.Totals["res-scan"])
 
-		ti.Start("res-owners")
 		owners, times, err := c.getNewOwners(node.ResId)
 		if err != nil {
 			return err
 		}
-		ti.Stop("res-owners")
-		//fmt.Printf("res-owners: %v\n", ti.Totals["res-owners"])
 
 		if len(owners) > 0 {
 			node.EndTime = times[0]
@@ -303,11 +288,7 @@ func (c *Context) walkDown(node *Node) (err error) {
 		}
 
 		kids = append(kids, child)
-		ti.Stop("res-inner")
-		//fmt.Printf("res-inner: %v\n", ti.Totals["res-inner"])
 	}
-	ti.Stop("res-loop")
-	fmt.Printf("res-loop: %v\n", ti.Totals["res-loop"])
 	if err != io.EOF {
 		return err
 	}
@@ -328,24 +309,14 @@ var ti = NewTimer()
 
 func (c *Context) getNewOwners(id int) (owners, times []int, err error) {
 	var owner, t int
-	ti.Start("owner-loop")
-
-	ti.Start("owner-query")
 	err = c.ownerStmt.Query(id, c.Simid, c.Simid)
-	ti.Stop("owner-query")
-	//fmt.Printf("owner-query: %v\n", ti.Totals["owner-query"])
 	for ; err == nil; err = c.ownerStmt.Next() {
-		ti.Start("owner-scan")
 		if err := c.ownerStmt.Scan(&owner, &t); err != nil {
 			return nil, nil, err
 		}
-		ti.Stop("owner-scan")
-		//fmt.Printf("owner-scan: %v\n", ti.Totals["owner-scan"])
 		owners = append(owners, owner)
 		times = append(times, t)
 	}
-	ti.Stop("owner-loop")
-	fmt.Printf("owner-loop: %v\n", ti.Totals["owner-loop"])
 	if err != io.EOF {
 		return nil, nil, err
 	}
