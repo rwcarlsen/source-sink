@@ -15,7 +15,6 @@ import (
 
 const dumpfreq = 100000
 
-var mappednodes = map[int32]struct{}{}
 
 func main() {
 	log.SetFlags(0)
@@ -34,11 +33,7 @@ func main() {
 
 	for _, simid := range simids {
 		ctx := &Context{Conn: conn, Simid: simid}
-		err := ctx.WalkAll()
-		if err != nil {
-			fmt.Println(err)
-		}
-		fatal(err)
+		fatal(ctx.WalkAll())
 	}
 }
 
@@ -140,6 +135,7 @@ type Node struct {
 type Context struct {
 	*sqlite3.Conn
 	Simid      string
+	mappednodes map[int32]struct{}
 	tmpResTbl  string
 	tmpResStmt *sqlite3.Stmt
 	dumpStmt   *sqlite3.Stmt
@@ -150,6 +146,7 @@ type Context struct {
 
 func (c *Context) init() (err error) {
 	c.Nodes = make([]*Node, 0, 10000)
+	c.mappednodes = map[int32]struct{}{}
 
 	// create temp res table without simid
 	fmt.Println("Creating temporary resource table...")
@@ -187,6 +184,7 @@ func (c *Context) init() (err error) {
 }
 
 func (c *Context) WalkAll() (err error) {
+	fmt.Printf("--- Building inventories for simid %v ---\n", c.Simid)
 	if err := c.init(); err != nil {
 		return err
 	}
@@ -243,10 +241,10 @@ func (c *Context) walkNode(node *Node) (err error) {
 }
 
 func (c *Context) walkDown(node *Node) (err error) {
-	if _, ok := mappednodes[int32(node.ResId)]; ok {
+	if _, ok := c.mappednodes[int32(node.ResId)]; ok {
 		return
 	}
-	mappednodes[int32(node.ResId)] = struct{}{}
+	c.mappednodes[int32(node.ResId)] = struct{}{}
 
 	// dump if necessary
 	c.resCount++
@@ -328,7 +326,7 @@ func (c *Context) getNewOwners(id int) (owners, times []int, err error) {
 }
 
 func (c *Context) dumpNodes() (err error) {
-	fmt.Printf("Dumping inventories (%d resources done)...\n", c.resCount)
+	fmt.Printf("    Dumping inventories (%d resources done)...\n", c.resCount)
 	if err := c.Exec("BEGIN TRANSACTION;"); err != nil {
 		return err
 	}
