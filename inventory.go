@@ -34,7 +34,11 @@ func main() {
 
 	for _, simid := range simids {
 		ctx := &Context{Conn: conn, Simid: simid}
-		fatal(ctx.WalkAll())
+		err := ctx.WalkAll()
+		if err != nil {
+			fmt.Println(err)
+		}
+		fatal(err)
 	}
 }
 
@@ -71,7 +75,8 @@ func Index(table string, cols ...string) string {
 
 var (
 	preExecStmts = []string{
-		"CREATE TABLE IF NOT EXISTS Inventories (SimID TEXT,ResID INTEGER,AgentID INTEGER,StartTime INTEGER,EndTime INTEGER);",
+		"DROP TABLE IF EXISTS Inventories",
+		"CREATE TABLE Inventories (SimID TEXT,ResID INTEGER,AgentID INTEGER,StartTime INTEGER,EndTime INTEGER);",
 		Index("Resources", "SimID", "ID"),
 		Index("Resources", "Parent1"),
 		Index("Resources", "Parent2"),
@@ -86,22 +91,11 @@ var (
 		Index("ResCreators", "SimID", "ResID"),
 		Index("Agents", "Prototype"),
 		Index("Agents", "ID"),
-		// simid indexes
-		//"CREATE INDEX IF NOT EXISTS res_simid ON Resources(SimID ASC,Parent1 ASC,Parent2 ASC);",
-		//"CREATE INDEX IF NOT EXISTS trans_simid ON Transactions(SimID ASC,ID ASC);",
-		//"CREATE INDEX IF NOT EXISTS transres_simid ON TransactedResources(SimID ASC,TransactionID ASC,ResourceID ASC);",
-
-		//"CREATE INDEX IF NOT EXISTS simid_res ON Resources(SimID ASC);",
-		//"CREATE INDEX IF NOT EXISTS simid_transres ON TransactedResources(SimID ASC);",
-		//"CREATE INDEX IF NOT EXISTS simid_comp ON Compositions(SimID ASC);",
-		//"CREATE INDEX IF NOT EXISTS simid_trans ON Transactions(SimID ASC);",
-		//"CREATE INDEX IF NOT EXISTS simid_rescreate ON ResCreators(SimID ASC);",
-		//"CREATE INDEX IF NOT EXISTS simid_agent ON Agents(SimID ASC);",
 	}
 	postExecStmts = []string{
-		"CREATE INDEX IF NOT EXISTS inv_agent ON Inventories(SimID ASC,AgentID ASC);",
-		"CREATE INDEX IF NOT EXISTS inv_start ON Inventories(SimID ASC,StartTime ASC);",
-		"CREATE INDEX IF NOT EXISTS inv_end ON Inventories(SimID ASC,EndTime ASC);",
+		Index("Inventories", "SimID", "AgentID"),
+		Index("Inventories", "SimID", "StartTime"),
+		Index("Inventories", "SimID", "EndTime"),
 	}
 	dumpSql    = "INSERT INTO Inventories VALUES (?,?,?,?,?);"
 	resSqlHead = "SELECT ID,TimeCreated FROM "
@@ -120,7 +114,7 @@ func Prepare(conn *sqlite3.Conn) (err error) {
 	fmt.Println("Creating indexes and inventory table...")
 	for _, sql := range preExecStmts {
 		if err := conn.Exec(sql); err != nil {
-			return err
+			fmt.Println("    ", err)
 		}
 	}
 	return nil
@@ -160,53 +154,57 @@ func (c *Context) init() (err error) {
 	// create temp res table without simid
 	fmt.Println("Creating temporary resource table...")
 	c.tmpResTbl = "tmp_restbl_" + strings.Replace(c.Simid, "-", "_", -1)
+	if err := c.Exec("DROP TABLE IF EXISTS " + c.tmpResTbl); err != nil {
+		panic(err)
+	}
 	sql := "CREATE TABLE " + c.tmpResTbl + " AS SELECT ID,TimeCreated,Parent1,Parent2 FROM Resources WHERE SimID = ?;"
 	if err := c.Exec(sql, c.Simid); err != nil {
-		return err
+		panic(err)
 	}
 	fmt.Println("Indexing temporary resource table...")
 	if err := c.Exec(Index(c.tmpResTbl, "Parent1")); err != nil {
-		return err
+		panic(err)
 	}
 	if err := c.Exec(Index(c.tmpResTbl, "Parent2")); err != nil {
-		return err
+		panic(err)
 	}
 
 	// create prepared statements
 	c.tmpResStmt, err = c.Prepare(resSqlHead + c.tmpResTbl + resSqlTail)
 	if err != nil {
-		return err
+		panic(err)
 	}
 
 	c.dumpStmt, err = c.Prepare(dumpSql)
 	if err != nil {
-		return err
+		panic(err)
 	}
 	c.ownerStmt, err = c.Prepare(ownerSql)
 	if err != nil {
-		return err
+		panic(err)
 	}
 	return nil
 }
 
 func (c *Context) WalkAll() (err error) {
 	if err := c.init(); err != nil {
-		return err
+		panic(err)
 	}
 	fmt.Println("Retrieving root resource nodes...")
 	roots, err := c.getRoots()
 	if err != nil {
-		return err
+		panic(err)
 	}
 	fmt.Printf("Found %v root nodes\n", len(roots))
 	for i, n := range roots {
-		fmt.Printf("Processing root %d...\n", i)
+		fmt.Printf("    Processing root %d...\n", i)
 		if err := c.walkNode(n); err != nil {
-			return err
+			panic(err)
 		}
 	}
+	fmt.Println("Dropping temporary resource table...")
 	if err := c.Exec("DROP TABLE " + c.tmpResTbl); err != nil {
-		return err
+		panic(err)
 	}
 	return c.dumpNodes()
 }
@@ -221,6 +219,7 @@ func (c *Context) getRoots() (roots []*Node, err error) {
 	if err := stmt.Scan(&n); err != nil {
 		return nil, err
 	}
+	stmt.Reset()
 
 	roots = make([]*Node, 0, n)
 	for stmt, err = c.Query(rootsSql, c.Simid, c.Simid); err == nil; err = stmt.Next() {
@@ -238,7 +237,7 @@ func (c *Context) getRoots() (roots []*Node, err error) {
 
 func (c *Context) walkNode(node *Node) (err error) {
 	if err := c.walkDown(node); err != nil {
-		return err
+		panic(err)
 	}
 	return nil
 }
@@ -253,7 +252,7 @@ func (c *Context) walkDown(node *Node) (err error) {
 	c.resCount++
 	if c.resCount%dumpfreq == 0 {
 		if err := c.dumpNodes(); err != nil {
-			return err
+			panic(err)
 		}
 	}
 
@@ -265,12 +264,12 @@ func (c *Context) walkDown(node *Node) (err error) {
 	for ; err == nil; err = c.tmpResStmt.Next() {
 		child := &Node{EndTime: math.MaxInt32}
 		if err := c.tmpResStmt.Scan(&child.ResId, &child.StartTime); err != nil {
-			return err
+			panic(err)
 		}
 
 		owners, times, err := c.getNewOwners(node.ResId)
 		if err != nil {
-			return err
+			panic(err)
 		}
 
 		if len(owners) > 0 {
@@ -290,14 +289,14 @@ func (c *Context) walkDown(node *Node) (err error) {
 		kids = append(kids, child)
 	}
 	if err != io.EOF {
-		return err
+		panic(err)
 	}
 
 	// walk down resource's children
 	for _, child := range kids {
 		err := c.walkDown(child)
 		if err != nil {
-			return err
+			panic(err)
 		}
 	}
 
@@ -324,17 +323,17 @@ func (c *Context) getNewOwners(id int) (owners, times []int, err error) {
 }
 
 func (c *Context) dumpNodes() (err error) {
-	fmt.Printf("dumping inventories (%d resources done)\n", c.resCount)
+	fmt.Printf("Dumping inventories (%d resources done)...\n", c.resCount)
 	if err := c.Exec("BEGIN TRANSACTION;"); err != nil {
-		return err
+		panic(err)
 	}
 	for _, n := range c.Nodes {
 		if err = c.dumpStmt.Exec(c.Simid, n.ResId, n.OwnerId, n.StartTime, n.EndTime); err != nil {
-			return err
+			panic(err)
 		}
 	}
 	if err := c.Exec("END TRANSACTION;"); err != nil {
-		return err
+		panic(err)
 	}
 	c.Nodes = c.Nodes[:0]
 	return nil
