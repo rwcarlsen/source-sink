@@ -1,72 +1,13 @@
 package main
 
 import (
-	"bytes"
-	"flag"
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"strings"
-	"time"
 
 	"code.google.com/p/go-sqlite/go1/sqlite3"
 )
-
-const dumpfreq = 100000
-
-
-func main() {
-	log.SetFlags(0)
-	flag.Parse()
-	fname := flag.Arg(0)
-
-	conn, err := sqlite3.Open(fname)
-	fatal(err)
-	defer conn.Close()
-
-	fatal(Prepare(conn))
-	defer Finish(conn)
-
-	simids, err := GetSimIds(conn)
-	fatal(err)
-
-	for _, simid := range simids {
-		ctx := &Context{Conn: conn, Simid: simid}
-		fatal(ctx.WalkAll())
-	}
-}
-
-func GetSimIds(conn *sqlite3.Conn) (ids []string, err error) {
-	sql := "SELECT SimID FROM SimulationTimeInfo"
-	var stmt *sqlite3.Stmt
-	for stmt, err = conn.Query(sql); err == nil; err = stmt.Next() {
-		var s string
-		if err := stmt.Scan(&s); err != nil {
-			return nil, err
-		}
-		ids = append(ids, s)
-	}
-	if err != io.EOF {
-		return nil, err
-	}
-	return ids, nil
-}
-
-func Index(table string, cols ...string) string {
-	var buf bytes.Buffer
-	buf.WriteString("CREATE INDEX IF NOT EXISTS ")
-	buf.WriteString(table + "_" + cols[0])
-	for _, c := range cols[1:] {
-		buf.WriteString("_" + c)
-	}
-	buf.WriteString(" ON " + table + " (" + cols[0] + " ASC")
-	for _, c := range cols[1:] {
-		buf.WriteString("," + c + " ASC")
-	}
-	buf.WriteString(");")
-	return buf.String()
-}
 
 var (
 	preExecStmts = []string{
@@ -134,14 +75,14 @@ type Node struct {
 
 type Context struct {
 	*sqlite3.Conn
-	Simid      string
+	Simid       string
 	mappednodes map[int32]struct{}
-	tmpResTbl  string
-	tmpResStmt *sqlite3.Stmt
-	dumpStmt   *sqlite3.Stmt
-	ownerStmt  *sqlite3.Stmt
-	resCount   int
-	Nodes      []*Node
+	tmpResTbl   string
+	tmpResStmt  *sqlite3.Stmt
+	dumpStmt    *sqlite3.Stmt
+	ownerStmt   *sqlite3.Stmt
+	resCount    int
+	Nodes       []*Node
 }
 
 func (c *Context) init() (err error) {
@@ -340,35 +281,4 @@ func (c *Context) dumpNodes() (err error) {
 	}
 	c.Nodes = c.Nodes[:0]
 	return nil
-}
-
-func fatal(err error) {
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-type Timer struct {
-	starts map[string]time.Time
-	Totals map[string]time.Duration
-}
-
-func NewTimer() *Timer {
-	return &Timer{
-		map[string]time.Time{},
-		map[string]time.Duration{},
-	}
-}
-
-func (t *Timer) Start(label string) {
-	if _, ok := t.starts[label]; !ok {
-		t.starts[label] = time.Now()
-	}
-}
-
-func (t *Timer) Stop(label string) {
-	if start, ok := t.starts[label]; ok {
-		t.Totals[label] += time.Now().Sub(start)
-	}
-	delete(t.starts, label)
 }
