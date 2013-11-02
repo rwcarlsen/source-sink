@@ -9,6 +9,8 @@ import (
 	"code.google.com/p/go-sqlite/go1/sqlite3"
 )
 
+// Index builds an sql statement for creating a new index on the specified
+// table over cols.  The index is named according to the table and cols.
 func Index(table string, cols ...string) string {
 	var buf bytes.Buffer
 	buf.WriteString("CREATE INDEX IF NOT EXISTS ")
@@ -24,6 +26,8 @@ func Index(table string, cols ...string) string {
 	return buf.String()
 }
 
+// GetSimIds returns a list of all simulation ids in the cyclus database for
+// conn.
 func GetSimIds(conn *sqlite3.Conn) (ids []string, err error) {
 	sql := "SELECT SimID FROM SimulationTimeInfo"
 	var stmt *sqlite3.Stmt
@@ -40,7 +44,7 @@ func GetSimIds(conn *sqlite3.Conn) (ids []string, err error) {
 	return ids, nil
 }
 
-func fatal(err error) {
+func fatalif(err error) {
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -9,6 +9,8 @@ import (
 	"code.google.com/p/go-sqlite/go1/sqlite3"
 )
 
+const DumpFreq = 100000
+
 var (
 	preExecStmts = []string{
 		"DROP TABLE IF EXISTS Inventories",
@@ -73,8 +75,12 @@ type Node struct {
 	EndTime   int
 }
 
+// Context encapsulates the logic for building a fast, queryable inventories
+// table for a specific simulation from raw cyclus output database.
 type Context struct {
 	*sqlite3.Conn
+	// Simid is the cyclus simulation id targeted by this context.  Must be
+	// set.
 	Simid       string
 	mappednodes map[int32]struct{}
 	tmpResTbl   string
@@ -83,6 +89,13 @@ type Context struct {
 	ownerStmt   *sqlite3.Stmt
 	resCount    int
 	Nodes       []*Node
+}
+
+func NewContext(conn *sqlite3.Conn, simid string) *Context {
+	return &Context{
+		Conn: conn,
+		Simid: simid,
+	}
 }
 
 func (c *Context) init() {
@@ -117,6 +130,10 @@ func (c *Context) init() {
 	panicif(err)
 }
 
+// WalkAll constructs the inventories table in the cyclus database alongside
+// other tables. Creates several indexes in the process.  Finish should be
+// called on the database connection after all simulation id's have been
+// walked.
 func (c *Context) WalkAll() (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -176,7 +193,7 @@ func (c *Context) walkDown(node *Node) {
 
 	// dump if necessary
 	c.resCount++
-	if c.resCount%dumpfreq == 0 {
+	if c.resCount%DumpFreq == 0 {
 		c.dumpNodes()
 	}
 
@@ -221,8 +238,6 @@ func (c *Context) walkDown(node *Node) {
 		c.walkDown(child)
 	}
 }
-
-var ti = NewTimer()
 
 func (c *Context) getNewOwners(id int) (owners, times []int) {
 	var owner, t int
