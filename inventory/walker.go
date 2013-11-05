@@ -9,6 +9,7 @@ import (
 	"code.google.com/p/go-sqlite/go1/sqlite3"
 )
 
+// The number of sql commands to buffer before dumping to the output database.
 const DumpFreq = 100000
 
 var (
@@ -48,6 +49,9 @@ var (
 				  WHERE res.SimID = ? AND rc.SimID = ?;`
 )
 
+// Prepare creates necessary indexes and tables required for efficient
+// calculation of cyclus simulation inventory information.  Should be called
+// once before walking begins.
 func Prepare(conn *sqlite3.Conn) (err error) {
 	fmt.Println("Creating indexes and inventory table...")
 	for _, sql := range preExecStmts {
@@ -58,6 +62,9 @@ func Prepare(conn *sqlite3.Conn) (err error) {
 	return nil
 }
 
+// Finish should be called for a cyclus database after all walkers have
+// completed processing inventory data. It creates final indexes and other
+// finishing tasks.
 func Finish(conn *sqlite3.Conn) (err error) {
 	fmt.Println("Creating inventory indexes...")
 	for _, sql := range postExecStmts {
@@ -88,18 +95,20 @@ type Context struct {
 	dumpStmt    *sqlite3.Stmt
 	ownerStmt   *sqlite3.Stmt
 	resCount    int
-	Nodes       []*Node
+	nodes       []*Node
+	History chan string
 }
 
-func NewContext(conn *sqlite3.Conn, simid string) *Context {
+func NewContext(conn *sqlite3.Conn, simid string, history chan string) *Context {
 	return &Context{
 		Conn: conn,
 		Simid: simid,
+		History: history,
 	}
 }
 
 func (c *Context) init() {
-	c.Nodes = make([]*Node, 0, 10000)
+	c.nodes = make([]*Node, 0, 10000)
 	c.mappednodes = map[int32]struct{}{}
 
 	// create temp res table without simid
@@ -158,6 +167,7 @@ func (c *Context) WalkAll() (err error) {
 	panicif(err)
 
 	c.dumpNodes()
+
 	return nil
 }
 
@@ -226,11 +236,11 @@ func (c *Context) walkDown(node *Node) {
 		times = append(times, lastend)
 		for i := range owners {
 			n := &Node{ResId: node.ResId, OwnerId: owners[i], StartTime: times[i], EndTime: times[i+1]}
-			c.Nodes = append(c.Nodes, n)
+			c.nodes = append(c.nodes, n)
 		}
 	}
 
-	c.Nodes = append(c.Nodes, node)
+	c.nodes = append(c.nodes, node)
 
 	// walk down resource's children
 	for _, child := range kids {
@@ -263,12 +273,16 @@ func (c *Context) dumpNodes() {
 	err := c.Exec("BEGIN TRANSACTION;")
 	panicif(err)
 
-	for _, n := range c.Nodes {
+	for _, n := range c.nodes {
 		err = c.dumpStmt.Exec(c.Simid, n.ResId, n.OwnerId, n.StartTime, n.EndTime)
 		panicif(err)
+		if c.History != nil {
+			sql := fmt.Sprintf("INSERT INTO Inventories VALUES('%v',%v,%v,%v,%v);", c.Simid, n.ResId, n.OwnerId, n.StartTime, n.EndTime)
+			c.History <- sql
+		}
 	}
 	err = c.Exec("END TRANSACTION;")
 	panicif(err)
 
-	c.Nodes = c.Nodes[:0]
+	c.nodes = c.nodes[:0]
 }
